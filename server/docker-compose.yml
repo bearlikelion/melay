@@ -1,0 +1,25 @@
+services:
+  melay:
+    build: .
+    image: melay:latest
+    container_name: melay
+    restart: unless-stopped
+    ports:
+      - "8890:8890"
+    volumes:
+      - melay-data:/data
+      # Drop a melay.yaml next to this file to register games and set per-game keys.
+      - ./melay.yaml:/data/melay.yaml:ro
+    environment:
+      MELAY_LOG_LEVEL: info
+      MELAY_LOG_JSON: "true"
+    healthcheck:
+      # The scratch image has no shell or curl, so the binary checks itself.
+      test: ["CMD", "/melay", "--healthcheck"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+volumes:
+  melay-data:

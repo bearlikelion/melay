@@ -1,0 +1,14 @@
+# Godot
+.godot/
+build/
+export_presets.cfg.local
+demo/build/*
+
+# Server
+server/melay
+server/*.db
+server/*.db-wal
+server/*.db-shm
+
+# OS
+.DS_Store

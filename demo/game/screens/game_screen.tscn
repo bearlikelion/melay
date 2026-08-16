@@ -1,0 +1,92 @@
+[gd_scene load_steps=2 format=3 uid="uid://dm3lygamescreen"]
+
+[ext_resource type="Script" path="res://game/screens/game_screen.gd" id="1_game"]
+
+[node name="GameScreen" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_game")
+
+[node name="ArenaFrame" type="Panel" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 16.0
+offset_top = 68.0
+offset_right = -16.0
+offset_bottom = -16.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_type_variation = &"Arena"
+
+[node name="Playfield" type="Control" parent="."]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 16.0
+offset_top = 68.0
+offset_right = -16.0
+offset_bottom = -16.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Ball" type="ColorRect" parent="Playfield"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(18, 18)
+layout_mode = 0
+offset_right = 18.0
+offset_bottom = 18.0
+color = Color(0.937, 0.855, 0.42, 1)
+
+[node name="CountdownLabel" type="Label" parent="."]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = 68.0
+offset_bottom = -16.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_type_variation = &"Countdown"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="Hud" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 16.0
+offset_top = 12.0
+offset_right = -120.0
+offset_bottom = 60.0
+grow_horizontal = 2
+
+[node name="RoomLabel" type="Label" parent="Hud"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"Heading"
+
+[node name="StatsLabel" type="Label" parent="Hud"]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="LeaveButton" type="Button" parent="."]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -104.0
+offset_top = 12.0
+offset_right = -16.0
+offset_bottom = 44.0
+grow_horizontal = 0
+text = "Leave"

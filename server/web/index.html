@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Melay</title>
+<style>
+:root {
+	--bg: #f6f7f9;
+	--panel: #ffffff;
+	--border: #e2e5ea;
+	--text: #14171c;
+	--muted: #667085;
+	--accent: #3b6ef5;
+	--accent-soft: #eaf0ff;
+	--good: #1a9e5f;
+	--radius: 10px;
+}
+@media (prefers-color-scheme: dark) {
+	:root {
+		--bg: #0e1013;
+		--panel: #16191e;
+		--border: #262b33;
+		--text: #e8eaed;
+		--muted: #939aa6;
+		--accent: #6c93ff;
+		--accent-soft: #1b2438;
+		--good: #3ecf8e;
+	}
+}
+* { box-sizing: border-box; }
+body {
+	margin: 0;
+	background: var(--bg);
+	color: var(--text);
+	font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+header {
+	border-bottom: 1px solid var(--border);
+	background: var(--panel);
+	padding: 18px 24px;
+	display: flex;
+	align-items: center;
+	gap: 16px;
+	flex-wrap: wrap;
+}
+h1 { font-size: 19px; margin: 0; letter-spacing: -0.01em; }
+h1 span { color: var(--muted); font-weight: 400; margin-left: 8px; font-size: 14px; }
+main { padding: 24px; max-width: 1100px; margin: 0 auto; }
+.controls { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+select {
+	font: inherit;
+	padding: 6px 10px;
+	border-radius: 8px;
+	border: 1px solid var(--border);
+	background: var(--panel);
+	color: var(--text);
+}
+.live {
+	display: inline-flex; align-items: center; gap: 7px;
+	color: var(--muted); font-size: 13px;
+}
+.dot {
+	width: 8px; height: 8px; border-radius: 50%;
+	background: var(--good);
+	animation: pulse 2s ease-in-out infinite;
+}
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+.totals { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 24px; }
+.tile {
+	background: var(--panel);
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	padding: 16px 20px;
+	min-width: 150px;
+	flex: 1;
+}
+.tile .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
+.tile .value { font-size: 30px; font-weight: 600; margin-top: 4px; font-variant-numeric: tabular-nums; }
+.game {
+	background: var(--panel);
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	padding: 18px 20px;
+	margin-bottom: 14px;
+}
+.game h2 { margin: 0 0 14px; font-size: 16px; display: flex; align-items: center; gap: 10px; }
+.pill {
+	background: var(--accent-soft);
+	color: var(--accent);
+	border-radius: 99px;
+	padding: 2px 10px;
+	font-size: 12px;
+	font-weight: 600;
+}
+.grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+	gap: 14px 20px;
+}
+.stat .label { color: var(--muted); font-size: 12px; }
+.stat .value { font-size: 19px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.bars { margin-top: 16px; display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; }
+.bars h3 { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin: 0 0 8px; }
+.bar { display: grid; grid-template-columns: 90px 1fr 42px; gap: 10px; align-items: center; margin-bottom: 5px; font-size: 13px; }
+.bar .track { background: var(--accent-soft); border-radius: 4px; height: 8px; overflow: hidden; }
+.bar .fill { background: var(--accent); height: 100%; border-radius: 4px; }
+.bar .n { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+.empty { color: var(--muted); text-align: center; padding: 48px 20px; }
+.empty code {
+	background: var(--accent-soft); color: var(--accent);
+	padding: 2px 7px; border-radius: 5px; font-size: 13px;
+}
+</style>
+</head>
+<body>
+<header>
+	<h1>Melay <span>relay analytics</span></h1>
+	<div class="controls">
+		<span class="live"><span class="dot"></span><span id="updated">connecting</span></span>
+		<select id="range">
+			<option value="24h">Last 24 hours</option>
+			<option value="7d" selected>Last 7 days</option>
+			<option value="30d">Last 30 days</option>
+			<option value="all">All time</option>
+		</select>
+	</div>
+</header>
+<main>
+	<div class="totals">
+		<div class="tile"><div class="label">Players online</div><div class="value" id="t-players">0</div></div>
+		<div class="tile"><div class="label">Rooms active</div><div class="value" id="t-rooms">0</div></div>
+		<div class="tile"><div class="label">Games</div><div class="value" id="t-games">0</div></div>
+	</div>
+	<div id="games"></div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+
+function duration(ms) {
+	if (!ms) return "0s";
+	const s = Math.round(ms / 1000);
+	if (s < 60) return s + "s";
+	const m = Math.floor(s / 60);
+	if (m < 60) return m + "m " + (s % 60) + "s";
+	const h = Math.floor(m / 60);
+	return h + "h " + (m % 60) + "m";
+}
+
+function bytes(n) {
+	if (!n) return "0 B";
+	const units = ["B", "KB", "MB", "GB", "TB"];
+	let i = 0;
+	while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+	return n.toFixed(i === 0 ? 0 : 1) + " " + units[i];
+}
+
+function escapeHTML(s) {
+	return String(s).replace(/[&<>"']/g, (c) => ({
+		"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+	}[c]));
+}
+
+function barChart(title, buckets) {
+	if (!buckets || !buckets.length) return "";
+	const max = Math.max(...buckets.map((b) => b.count));
+	const rows = buckets.slice(0, 6).map((b) => `
+		<div class="bar">
+			<span>${escapeHTML(b.key)}</span>
+			<span class="track"><span class="fill" style="width:${(b.count / max) * 100}%"></span></span>
+			<span class="n">${b.count}</span>
+		</div>`).join("");
+	return `<div><h3>${title}</h3>${rows}</div>`;
+}
+
+function gameCard(g) {
+	const charts = barChart("Platforms", g.platforms) + barChart("Versions", g.versions);
+	return `
+	<div class="game">
+		<h2>${escapeHTML(g.game)} <span class="pill">${g.players_online} online</span></h2>
+		<div class="grid">
+			<div class="stat"><div class="label">Rooms active</div><div class="value">${g.rooms_active}</div></div>
+			<div class="stat"><div class="label">Peak online</div><div class="value">${g.peak_players_online}</div></div>
+			<div class="stat"><div class="label">Sessions</div><div class="value">${g.sessions}</div></div>
+			<div class="stat"><div class="label">Unique players</div><div class="value">${g.unique_clients}</div></div>
+			<div class="stat"><div class="label">Rooms created</div><div class="value">${g.rooms_created}</div></div>
+			<div class="stat"><div class="label">Total playtime</div><div class="value">${duration(g.total_playtime_ms)}</div></div>
+			<div class="stat"><div class="label">Median session</div><div class="value">${duration(g.median_session_ms)}</div></div>
+			<div class="stat"><div class="label">p95 session</div><div class="value">${duration(g.p95_session_ms)}</div></div>
+			<div class="stat"><div class="label">Relayed</div><div class="value">${bytes(g.bytes_relayed)}</div></div>
+		</div>
+		${charts ? `<div class="bars">${charts}</div>` : ""}
+	</div>`;
+}
+
+async function refresh() {
+	try {
+		const res = await fetch("/api/v1/stats?range=" + encodeURIComponent($("range").value));
+		const data = await res.json();
+		$("t-players").textContent = data.players_online ?? 0;
+		$("t-rooms").textContent = data.rooms_active ?? 0;
+		$("t-games").textContent = (data.games || []).length;
+		$("games").innerHTML = (data.games || []).length
+			? data.games.map(gameCard).join("")
+			: `<div class="empty">No games have connected yet.<br><br>
+			   Point a Godot client at this relay with
+			   <code>Melay.configure(url, "your-game-id", "1.0.0")</code>.</div>`;
+		$("updated").textContent = "updated " + new Date().toLocaleTimeString();
+	} catch (err) {
+		$("updated").textContent = "connection lost";
+	}
+}
+
+$("range").addEventListener("change", refresh);
+refresh();
+setInterval(refresh, 5000);
+</script>
+</body>
+</html>

@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" fill="none">
+  <title>Melay</title>
+  <g stroke="#5b8dee" stroke-width="10" stroke-linecap="round" opacity="0.85">
+    <path d="M128 128 L60 64"/>
+    <path d="M128 128 L196 64"/>
+    <path d="M128 128 L60 192"/>
+    <path d="M128 128 L196 192"/>
+  </g>
+  <circle cx="128" cy="128" r="46" fill="#5b8dee"/>
+  <circle cx="128" cy="128" r="46" fill="none" stroke="#a9c1ff" stroke-width="8"/>
+  <circle cx="128" cy="128" r="16" fill="#0e1013"/>
+  <g fill="#e6ebf5">
+    <circle cx="60" cy="64" r="24"/>
+    <circle cx="196" cy="64" r="24"/>
+    <circle cx="60" cy="192" r="24"/>
+    <circle cx="196" cy="192" r="24"/>
+  </g>
+</svg>

@@ -1,7 +1,7 @@
 class_name MelayProtocol
 extends RefCounted
 
-## Wire format for the Melay relay. See docs/PROTOCOL.md, which is normative.
+## Wire format for the Melay relay. See server/PROTOCOL.md, which is normative.
 
 enum Op {
 	HELLO = 0x01,

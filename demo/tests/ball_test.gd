@@ -38,6 +38,9 @@ func _run() -> void:
 	screen = await _make_screen()
 	_check_spawn_points(screen)
 
+	screen = await _make_screen()
+	_check_rotated_paddle_bounce(screen)
+
 
 ## Builds a host-side arena with one player, already past the countdown.
 func _make_screen() -> GameScreen:
@@ -157,6 +160,24 @@ func _check_spawn_points(screen: GameScreen) -> void:
 		_fail("both paddles started on the same side of the field")
 		return
 	_pass("paddles start centred on opposite sides")
+
+
+# A paddle turned 90 degrees presents its short edge; an AABB test gets this wrong.
+func _check_rotated_paddle_bounce(screen: GameScreen) -> void:
+	var player: DemoPlayer = screen._players[1]
+	player.position = Vector2(400.0, 300.0)
+	player.rotation = PI / 2.0
+
+	var paddle_centre: Vector2 = player.centre()
+	screen._ball.position = paddle_centre + Vector2(0.0, 90.0) - screen._ball.size * 0.5
+	screen._ball_velocity = Vector2(0.0, -200.0)
+
+	for i: int in MAX_STEPS:
+		screen._simulate_ball(STEP)
+		if screen._ball_velocity.y > 0.0:
+			_pass("ball reflected off a rotated paddle")
+			return
+	_fail("ball passed through a rotated paddle")
 
 
 func _pass(message: String) -> void:

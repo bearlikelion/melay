@@ -1,0 +1,34 @@
+title: Melay
+description: A Godot 4 MultiplayerPeer backed by a Dockerised relay
+remote_theme: just-the-docs/just-the-docs
+
+# Serving from the /docs folder of a repo means the site lives under the repo name.
+# Change this if the repository is renamed, or set it to "" for a user or org site.
+baseurl: "/melay"
+
+plugins:
+  - jekyll-remote-theme
+  # just-the-docs needs this one; it is on the GitHub Pages allowed list.
+  - jekyll-include-cache
+
+# A remote theme does not bring Jekyll's layout default with it, so without this every
+# page except index.md renders as bare HTML with no stylesheet.
+defaults:
+  - scope:
+      path: ""
+    values:
+      layout: default
+
+color_scheme: dark
+search_enabled: true
+heading_anchors: true
+
+aux_links:
+  GitHub: https://github.com/bearlikelion/melay
+
+footer_content: >
+  Melay is MIT licensed.
+
+exclude:
+  - Gemfile
+  - Gemfile.lock

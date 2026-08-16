@@ -40,12 +40,15 @@ type Defaults struct {
 
 // Config is the whole server configuration.
 type Config struct {
-	Addr        string                `yaml:"addr"`
-	DatabaseURL string                `yaml:"database_url"`
-	LogLevel    string                `yaml:"log_level"`
-	LogJSON     bool                  `yaml:"log_json"`
-	Games       map[string]GameConfig `yaml:"games"`
-	Default     Defaults              `yaml:"default"`
+	Addr        string `yaml:"addr"`
+	DatabaseURL string `yaml:"database_url"`
+	// WebDir, when set, is a Godot web export served at /play alongside the relay.
+	// Same origin as the WebSocket, which sidesteps mixed content and CORS entirely.
+	WebDir   string                `yaml:"web_dir"`
+	LogLevel string                `yaml:"log_level"`
+	LogJSON  bool                  `yaml:"log_json"`
+	Games    map[string]GameConfig `yaml:"games"`
+	Default  Defaults              `yaml:"default"`
 }
 
 // Resolved is the effective limit set for one game id, after defaults are applied.
@@ -116,6 +119,9 @@ func (c *Config) applyEnv() {
 	}
 	if v := os.Getenv("MELAY_DATABASE_URL"); v != "" {
 		c.DatabaseURL = v
+	}
+	if v := os.Getenv("MELAY_WEB_DIR"); v != "" {
+		c.WebDir = v
 	}
 	if v := os.Getenv("MELAY_LOG_LEVEL"); v != "" {
 		c.LogLevel = v

@@ -26,8 +26,8 @@ const BALL_SMOOTHING: float = 18.0
 ## Past this much error a correction is a teleport, not a nudge, so stop easing.
 const BALL_SNAP_DISTANCE: float = 120.0
 
-## How much an off-centre hit angles the return, which is what makes it feel like pong.
-const SPIN_INFLUENCE: float = 0.6
+## How much an off-centre hit angles the return, as a fraction of the serve speed.
+const SPIN_INFLUENCE: float = 0.5
 
 ## How long "GO" stays up after the countdown reaches zero.
 const GO_LINGER: float = 0.6
@@ -211,38 +211,53 @@ func _apply_speedup() -> void:
 
 
 func _bounce_off_players() -> bool:
-	var ball_rect: Rect2 = Rect2(_ball.position, _ball.size)
+	var radius: float = _ball.size.x * 0.5
+	var centre: Vector2 = _ball.position + _ball.size * 0.5
 
 	for peer_id: int in _players:
 		var player: DemoPlayer = _players[peer_id]
 		if not is_instance_valid(player):
 			continue
-
-		var player_rect: Rect2 = Rect2(player.position, player.size)
-		if not ball_rect.intersects(player_rect):
-			continue
-
-		_reflect_off(ball_rect, player_rect)
-		return true
+		if _reflect_off_paddle(player, centre, radius):
+			return true
 	return false
 
 
-func _reflect_off(ball_rect: Rect2, player_rect: Rect2) -> void:
-	var overlap: Rect2 = ball_rect.intersection(player_rect)
-	var ball_center: Vector2 = ball_rect.get_center()
-	var player_center: Vector2 = player_rect.get_center()
+# Paddles rotate, so this is a circle against an oriented box, solved in local space.
+func _reflect_off_paddle(player: DemoPlayer, centre: Vector2, radius: float) -> bool:
+	var angle: float = player.rotation
+	var paddle_centre: Vector2 = player.centre()
+	var half: Vector2 = DemoPlayer.SIZE * 0.5
 
-	# Reflect on whichever axis is least penetrated, which is the face it actually hit.
-	if overlap.size.x < overlap.size.y:
-		var away: float = _away(ball_center.x, player_center.x)
-		_ball_velocity.x = absf(_ball_velocity.x) * away
-		_ball.position.x += overlap.size.x * away
-		_ball_velocity.y += (ball_center.y - player_center.y) * SPIN_INFLUENCE
+	var local: Vector2 = (centre - paddle_centre).rotated(-angle)
+	var closest: Vector2 = local.clamp(-half, half)
+	var offset: Vector2 = local - closest
+
+	var normal: Vector2
+	if offset.length_squared() > 0.0001:
+		if offset.length() > radius:
+			return false
+		normal = offset.normalized()
 	else:
-		var away: float = _away(ball_center.y, player_center.y)
-		_ball_velocity.y = absf(_ball_velocity.y) * away
-		_ball.position.y += overlap.size.y * away
-		_ball_velocity.x += (ball_center.x - player_center.x) * SPIN_INFLUENCE
+		# The centre is inside the paddle, so escape along the shallowest axis.
+		var gap: Vector2 = half - local.abs()
+		if gap.x < gap.y:
+			normal = Vector2(signf(local.x), 0.0)
+		else:
+			normal = Vector2(0.0, signf(local.y))
+		if normal == Vector2.ZERO:
+			normal = Vector2.UP
+
+	var velocity_local: Vector2 = _ball_velocity.rotated(-angle)
+	if velocity_local.dot(normal) < 0.0:
+		velocity_local = velocity_local.bounce(normal)
+	# A hit away from the middle angles the return along the paddle's length.
+	velocity_local.x += (local.x / half.x) * BALL_SPEED * SPIN_INFLUENCE
+
+	_ball_velocity = velocity_local.rotated(angle)
+	_ball.position = paddle_centre + (closest + normal * radius).rotated(angle) \
+		- _ball.size * 0.5
+	return true
 
 
 # Dead-reckons between updates and eases onto the result, so corrections read as nudges.
@@ -266,10 +281,6 @@ func _follow_ball(delta: float) -> void:
 	_ball.position = _ball.position.lerp(
 		_ball_predicted, clampf(BALL_SMOOTHING * delta, 0.0, 1.0)
 	)
-
-
-func _away(from: float, to: float) -> float:
-	return 1.0 if from >= to else -1.0
 
 
 func _reset_ball() -> void:

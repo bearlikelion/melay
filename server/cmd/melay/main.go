@@ -54,7 +54,7 @@ func main() {
 	h := hub.New(cfg, rooms, st, log)
 
 	mux := http.NewServeMux()
-	api.New(h, rooms, st, log).Routes(mux)
+	api.New(h, rooms, st, log, cfg.WebDir).Routes(mux)
 
 	srv := &http.Server{
 		Addr:              cfg.Addr,

@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# The demo project is saved in Godot 4.7 scene format, so an older editor cannot open
+# it. Bump this when you move the project to a newer engine.
+env:
+  GODOT_VERSION: "4.7.2"
+
+jobs:
+  server:
+    name: Relay
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+
+      - name: Check formatting
+        working-directory: server
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "${unformatted}" ]; then
+            echo "these files need gofmt:"
+            echo "${unformatted}"
+            exit 1
+          fi
+
+      - name: Vet
+        working-directory: server
+        run: go vet ./...
+
+      - name: Test
+        working-directory: server
+        run: go test -race ./...
+
+      - name: Build image
+        run: docker build -t melay:ci server
+
+  godot:
+    name: Addon and demo
+    runs-on: ubuntu-latest
+    needs: server
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+
+      - uses: chickensoft-games/setup-godot@v2
+        with:
+          version: ${{ env.GODOT_VERSION }}
+          use-dotnet: false
+
+      - name: Import the project
+        working-directory: demo
+        run: godot --headless --editor --quit-after 60 || true
+
+      - name: Fail on script errors
+        working-directory: demo
+        run: |
+          godot --headless --editor --quit-after 40 2>&1 | tee import.log
+          if grep -qE 'SCRIPT ERROR|Parse Error' import.log; then
+            echo "the project has script errors"
+            exit 1
+          fi
+
+      - name: End to end
+        working-directory: demo
+        run: tests/run_tests.sh

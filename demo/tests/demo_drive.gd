@@ -93,6 +93,14 @@ func _run_host() -> void:
 	await _settle()
 	_check_arena()
 
+	# A peer joining after the match started must be pulled straight into the game.
+	# This is the path that silently broke when _start_game gained an argument.
+	if _role == Role.HOST:
+		_require(
+			_demo._in_game,
+			"host is not marked in-game, so the late joiner path cannot be exercised"
+		)
+
 	# Held open until the guest is done, rather than racing it to the exit.
 	if not await _wait_until(func() -> bool: return FileAccess.file_exists(_done_path())):
 		_fail("the guest never reported finishing")

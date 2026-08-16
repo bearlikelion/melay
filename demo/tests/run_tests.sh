@@ -111,6 +111,7 @@ echo
 
 run_pair res://tests/melay_test.tscn peer || FAILED=1
 run_pair res://tests/demo_drive.tscn demo || FAILED=1
+run_pair res://tests/latejoin_test.tscn latejoin || FAILED=1
 
 if [[ -f "${WORK_DIR}/server.log" ]]; then
 	echo "===== relay ====="

@@ -12,7 +12,8 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${REPO_ROOT}"
 
-PROJECT="${MELAY_GCP_PROJECT:-your-gcp-project}"
+# No default on purpose, so nobody deploys into somebody else's project by accident.
+PROJECT="${MELAY_GCP_PROJECT:?set MELAY_GCP_PROJECT to your Google Cloud project id}"
 REGION="${MELAY_GCP_REGION:-us-east1}"
 SERVICE="${MELAY_GCP_SERVICE:-melay}"
 REPOSITORY="${MELAY_GCP_REPO:-melay}"

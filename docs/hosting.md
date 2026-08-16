@@ -19,17 +19,13 @@ Players on the same network connect to `ws://your-ip:8890`.
 Cloud Run gives you an HTTPS address for free, which is what browser games need.
 
 ```bash
-scripts/deploy-cloudrun.sh
+MELAY_GCP_PROJECT=my-project scripts/deploy-cloudrun.sh
 ```
 
 It prints your relay address when it finishes. Set that as **Url** in
 *Project Settings > Melay*, and set **Mode** to `Remote`.
 
-To use a different project or region:
-
-```bash
-MELAY_GCP_PROJECT=my-project MELAY_GCP_REGION=us-east1 scripts/deploy-cloudrun.sh
-```
+`MELAY_GCP_REGION` defaults to `us-east1` if you want somewhere else.
 
 ## Anywhere else
 

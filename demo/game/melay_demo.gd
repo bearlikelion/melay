@@ -180,9 +180,9 @@ func _on_peer_joined(info: MelayPeerInfo) -> void:
 
 	if Melay.is_host():
 		_sync_ready_states.rpc_id(info.peer_id, _ready_states)
-		# A late joiner needs telling that the match already started.
+		# Already past the countdown, so a late joiner starts playing immediately.
 		if _in_game:
-			_start_game.rpc_id(info.peer_id)
+			_start_game.rpc_id(info.peer_id, Melay.get_relay_time_us())
 
 	if _screen == Screen.GAME and _current != null:
 		_current.spawn_player(info)

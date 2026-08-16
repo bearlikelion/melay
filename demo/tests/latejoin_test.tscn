@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://dm3lylatejoin"]
+
+[ext_resource type="Script" path="res://tests/latejoin_test.gd" id="1_late"]
+
+[node name="LateJoinTest" type="Node"]
+script = ExtResource("1_late")

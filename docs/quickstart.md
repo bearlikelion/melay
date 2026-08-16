@@ -159,6 +159,131 @@ if result.is_error():
 	return
 ```
 
+## A real lobby, end to end
+
+Steps 5 and 6 get you connected. A real game needs a lobby: players gather, mark themselves
+ready, and the host starts the match. Here is the whole pattern, which is what `demo/` does.
+
+Put it all on **one node that exists on every peer**, such as your main scene. RPCs are matched
+by node path, so both sides must agree on where the function lives.
+
+### Listen for the room
+
+```gdscript
+func _ready() -> void:
+	Melay.room_joined.connect(_on_room_joined)
+	Melay.peer_joined.connect(_on_peer_joined)
+	Melay.peer_left.connect(_on_peer_left)
+	Melay.room_left.connect(_on_room_left)
+
+
+func _on_room_joined(room: MelayRoom) -> void:
+	# You are in. Swap the menu for the lobby.
+	_ready_states.clear()
+	_ready_states[room.self_peer_id] = false
+	_show_lobby()
+```
+
+`room_joined` fires for the host and for everyone joining, so one handler covers both.
+
+### Ready up
+
+Every player owns their own ready flag, so this is `any_peer`. `call_local` means the sender
+runs it too, and everyone ends up with the same dictionary.
+
+```gdscript
+var _ready_states: Dictionary = {}
+
+
+func _on_ready_button_pressed() -> void:
+	_is_ready = not _is_ready
+	_set_ready.rpc(_is_ready)
+
+
+@rpc("any_peer", "reliable", "call_local")
+func _set_ready(is_ready: bool) -> void:
+	# A local call reports sender 0, so fall back to our own id.
+	var sender: int = multiplayer.get_remote_sender_id()
+	if sender == 0:
+		sender = multiplayer.get_unique_id()
+	_ready_states[sender] = is_ready
+	_refresh_lobby()
+```
+
+### Catch new arrivals up
+
+Somebody joining late has an empty dictionary, so the host sends them the current one.
+
+```gdscript
+func _on_peer_joined(info: MelayPeerInfo) -> void:
+	_ready_states[info.peer_id] = false
+	if Melay.is_host():
+		_sync_ready_states.rpc_id(info.peer_id, _ready_states)
+	_refresh_lobby()
+
+
+@rpc("authority", "reliable", "call_remote")
+func _sync_ready_states(states: Dictionary) -> void:
+	for peer_id: Variant in states:
+		_ready_states[int(peer_id)] = bool(states[peer_id])
+	_refresh_lobby()
+```
+
+`authority` means only the host may send it, which Godot enforces for you.
+
+### Start the match
+
+Only the host, and only once everybody is ready:
+
+```gdscript
+func _on_start_button_pressed() -> void:
+	if not Melay.is_host() or not _all_ready():
+		return
+	_start_game.rpc()
+
+
+@rpc("authority", "reliable", "call_local")
+func _start_game() -> void:
+	_show_game()
+
+
+func _all_ready() -> bool:
+	var room: MelayRoom = Melay.get_room()
+	if room == null or room.peers.is_empty():
+		return false
+	for peer_id: int in room.peers:
+		if not bool(_ready_states.get(peer_id, false)):
+			return false
+	return true
+```
+
+`call_local` matters here: without it the host would tell everyone else to start and stay in
+the lobby itself.
+
+### Which RPC mode to use
+
+| Mode | Use it for |
+|---|---|
+| `any_peer` | Anything a player asserts about themselves, like readiness or input |
+| `authority` | Anything only the host may decide, like starting the match |
+| `call_local` | When the sender must run it too |
+| `call_remote` | When the sender has already done the work locally |
+
+### A countdown everyone shares
+
+The demo goes one step further. Instead of starting immediately it sends the relay time the
+match should begin at, so every player counts down to the same instant no matter their ping:
+
+```gdscript
+_start_game.rpc(Melay.get_relay_time_us() + 3_000_000)
+
+
+@rpc("authority", "reliable", "call_local")
+func _start_game(start_at_relay_us: int) -> void:
+	var remaining: float = float(start_at_relay_us - Melay.get_relay_time_us()) / 1_000_000.0
+	_begin_countdown(clampf(remaining, 0.0, 3.0))
+```
+
 ## Try the demo
 
 Open the `demo/` folder as a Godot project and press F5. For two players, use

@@ -1,0 +1,32 @@
+[gd_scene load_steps=3 format=3 uid="uid://dm3lydemoroot"]
+
+[ext_resource type="Script" path="res://game/melay_demo.gd" id="1_demo"]
+[ext_resource type="Theme" path="res://game/demo_theme.tres" id="2_theme"]
+
+[node name="MelayDemo" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme = ExtResource("2_theme")
+script = ExtResource("1_demo")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.086, 0.094, 0.11, 1)
+
+[node name="ScreenHost" type="Control" parent="."]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2

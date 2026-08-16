@@ -1,0 +1,173 @@
+[gd_resource type="Theme" format=3 uid="uid://dsgkj88njfvg3"]
+
+[sub_resource type="StyleBoxFlat" id="Arena"]
+bg_color = Color(0.063, 0.071, 0.086, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.169, 0.188, 0.227, 1)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+
+[sub_resource type="StyleBoxFlat" id="ButtonDisabled"]
+content_margin_left = 14.0
+content_margin_top = 9.0
+content_margin_right = 14.0
+content_margin_bottom = 9.0
+bg_color = Color(0.129, 0.145, 0.176, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.18, 0.196, 0.235, 1)
+corner_radius_top_left = 7
+corner_radius_top_right = 7
+corner_radius_bottom_right = 7
+corner_radius_bottom_left = 7
+
+[sub_resource type="StyleBoxFlat" id="ButtonHover"]
+content_margin_left = 14.0
+content_margin_top = 9.0
+content_margin_right = 14.0
+content_margin_bottom = 9.0
+bg_color = Color(0.227, 0.255, 0.318, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.357, 0.553, 0.933, 1)
+corner_radius_top_left = 7
+corner_radius_top_right = 7
+corner_radius_bottom_right = 7
+corner_radius_bottom_left = 7
+
+[sub_resource type="StyleBoxFlat" id="ButtonNormal"]
+content_margin_left = 14.0
+content_margin_top = 9.0
+content_margin_right = 14.0
+content_margin_bottom = 9.0
+bg_color = Color(0.176, 0.196, 0.243, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.263, 0.29, 0.353, 1)
+corner_radius_top_left = 7
+corner_radius_top_right = 7
+corner_radius_bottom_right = 7
+corner_radius_bottom_left = 7
+
+[sub_resource type="StyleBoxFlat" id="ButtonPressed"]
+content_margin_left = 14.0
+content_margin_top = 9.0
+content_margin_right = 14.0
+content_margin_bottom = 9.0
+bg_color = Color(0.294, 0.42, 0.741, 1)
+corner_radius_top_left = 7
+corner_radius_top_right = 7
+corner_radius_bottom_right = 7
+corner_radius_bottom_left = 7
+
+[sub_resource type="StyleBoxFlat" id="Field"]
+content_margin_left = 10.0
+content_margin_top = 8.0
+content_margin_right = 10.0
+content_margin_bottom = 8.0
+bg_color = Color(0.071, 0.082, 0.102, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.216, 0.235, 0.286, 1)
+corner_radius_top_left = 7
+corner_radius_top_right = 7
+corner_radius_bottom_right = 7
+corner_radius_bottom_left = 7
+
+[sub_resource type="StyleBoxFlat" id="Selected"]
+bg_color = Color(0.204, 0.278, 0.463, 1)
+corner_radius_top_left = 5
+corner_radius_top_right = 5
+corner_radius_bottom_right = 5
+corner_radius_bottom_left = 5
+
+[sub_resource type="StyleBoxFlat" id="FieldFocus"]
+content_margin_left = 10.0
+content_margin_top = 8.0
+content_margin_right = 10.0
+content_margin_bottom = 8.0
+bg_color = Color(0.071, 0.082, 0.102, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.357, 0.553, 0.933, 1)
+corner_radius_top_left = 7
+corner_radius_top_right = 7
+corner_radius_bottom_right = 7
+corner_radius_bottom_left = 7
+
+[sub_resource type="StyleBoxFlat" id="Panel"]
+content_margin_left = 4.0
+content_margin_top = 4.0
+content_margin_right = 4.0
+content_margin_bottom = 4.0
+bg_color = Color(0.106, 0.118, 0.145, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.192, 0.212, 0.255, 1)
+corner_radius_top_left = 12
+corner_radius_top_right = 12
+corner_radius_bottom_right = 12
+corner_radius_bottom_left = 12
+
+[resource]
+default_font_size = 14
+Arena/base_type = &"Panel"
+Arena/styles/panel = SubResource("Arena")
+Button/colors/font_color = Color(0.878, 0.902, 0.949, 1)
+Button/colors/font_disabled_color = Color(0.42, 0.447, 0.494, 1)
+Button/colors/font_hover_color = Color(1, 1, 1, 1)
+Button/colors/font_pressed_color = Color(1, 1, 1, 1)
+Button/styles/disabled = SubResource("ButtonDisabled")
+Button/styles/hover = SubResource("ButtonHover")
+Button/styles/normal = SubResource("ButtonNormal")
+Button/styles/pressed = SubResource("ButtonPressed")
+Countdown/base_type = &"Label"
+Countdown/colors/font_color = Color(1, 1, 1, 1)
+Countdown/colors/font_outline_color = Color(0.063, 0.071, 0.086, 1)
+Countdown/constants/outline_size = 12
+Countdown/font_sizes/font_size = 110
+HBoxContainer/constants/separation = 8
+Heading/base_type = &"Label"
+Heading/colors/font_color = Color(0.616, 0.663, 0.749, 1)
+Heading/font_sizes/font_size = 13
+ItemList/colors/font_color = Color(0.851, 0.878, 0.929, 1)
+ItemList/constants/h_separation = 6
+ItemList/constants/v_separation = 6
+ItemList/styles/focus = SubResource("Field")
+ItemList/styles/panel = SubResource("Field")
+ItemList/styles/selected = SubResource("Selected")
+ItemList/styles/selected_focus = SubResource("Selected")
+Label/colors/font_color = Color(0.878, 0.902, 0.949, 1)
+Label/font_sizes/font_size = 14
+LineEdit/colors/font_color = Color(0.929, 0.945, 0.973, 1)
+LineEdit/colors/font_placeholder_color = Color(0.451, 0.478, 0.541, 1)
+LineEdit/styles/focus = SubResource("FieldFocus")
+LineEdit/styles/normal = SubResource("Field")
+MarginContainer/constants/margin_bottom = 20
+MarginContainer/constants/margin_left = 20
+MarginContainer/constants/margin_right = 20
+MarginContainer/constants/margin_top = 20
+Muted/base_type = &"Label"
+Muted/colors/font_color = Color(0.545, 0.58, 0.651, 1)
+Muted/font_sizes/font_size = 13
+PanelContainer/styles/panel = SubResource("Panel")
+Title/base_type = &"Label"
+Title/font_sizes/font_size = 24
+VBoxContainer/constants/separation = 10

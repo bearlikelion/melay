@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://dm3lyselftest"]
+
+[ext_resource type="Script" path="res://tests/melay_test.gd" id="1_test"]
+
+[node name="MelayTest" type="Node"]
+script = ExtResource("1_test")

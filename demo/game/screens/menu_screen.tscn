@@ -1,0 +1,82 @@
+[gd_scene format=3 uid="uid://0xmlnidwje1b"]
+
+[ext_resource type="Script" uid="uid://onmpt0m0knm1" path="res://game/screens/menu_screen.gd" id="1_menu"]
+
+[node name="MenuScreen" type="Control" unique_id=652574507]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_menu")
+
+[node name="Panel" type="PanelContainer" parent="." unique_id=987072390]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -190.0
+offset_top = -230.0
+offset_right = 190.0
+offset_bottom = 230.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Margin" type="MarginContainer" parent="Panel" unique_id=1004286430]
+layout_mode = 2
+
+[node name="VBox" type="VBoxContainer" parent="Panel/Margin" unique_id=1545129638]
+layout_mode = 2
+
+[node name="TitleLabel" type="Label" parent="Panel/Margin/VBox" unique_id=870791071]
+layout_mode = 2
+theme_type_variation = &"Title"
+text = "Melay demo"
+
+[node name="StatusLabel" type="Label" parent="Panel/Margin/VBox" unique_id=275926484]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"Muted"
+text = "Host a room, or join one with a code."
+
+[node name="NameLabel" type="Label" parent="Panel/Margin/VBox" unique_id=894956997]
+layout_mode = 2
+theme_type_variation = &"Heading"
+text = "Display name"
+
+[node name="NameEdit" type="LineEdit" parent="Panel/Margin/VBox" unique_id=1689896041]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="HostButton" type="Button" parent="Panel/Margin/VBox" unique_id=935029443]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Host a new room"
+
+[node name="JoinRow" type="HBoxContainer" parent="Panel/Margin/VBox" unique_id=2090424517]
+visible = false
+layout_mode = 2
+
+[node name="CodeEdit" type="LineEdit" parent="Panel/Margin/VBox/JoinRow" unique_id=217929934]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "Room code"
+
+[node name="JoinButton" type="Button" parent="Panel/Margin/VBox/JoinRow" unique_id=992662025]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Join"
+
+[node name="RefreshButton" type="Button" parent="Panel/Margin/VBox" unique_id=824576285]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Browse open rooms"
+
+[node name="RoomList" type="ItemList" parent="Panel/Margin/VBox" unique_id=1496195199]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3

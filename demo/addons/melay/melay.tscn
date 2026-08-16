@@ -1,0 +1,12 @@
+[gd_scene format=3 uid="uid://bllabmw18n3yq"]
+
+[ext_resource type="Script" uid="uid://c5kybgdawjgnp" path="res://addons/melay/melay.gd" id="1_melay_root"]
+[ext_resource type="Script" uid="uid://bmchhmcslyeaa" path="res://addons/melay/melay_client.gd" id="2_melay_client"]
+
+[node name="Melay" type="Node" unique_id=338001708]
+process_mode = 3
+script = ExtResource("1_melay_root")
+
+[node name="MelayClient" type="Node" parent="." unique_id=816634414]
+unique_name_in_owner = true
+script = ExtResource("2_melay_client")

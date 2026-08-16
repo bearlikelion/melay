@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://dm3lyballtest"]
+
+[ext_resource type="Script" path="res://tests/ball_test.gd" id="1_ball"]
+
+[node name="BallTest" type="Node"]
+script = ExtResource("1_ball")

@@ -1,0 +1,71 @@
+[gd_scene load_steps=2 format=3 uid="uid://dm3lylobbyscreen"]
+
+[ext_resource type="Script" path="res://game/screens/lobby_screen.gd" id="1_lobby"]
+
+[node name="LobbyScreen" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_lobby")
+
+[node name="Panel" type="PanelContainer" parent="."]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -220.0
+offset_top = -215.0
+offset_right = 220.0
+offset_bottom = 215.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Margin" type="MarginContainer" parent="Panel"]
+layout_mode = 2
+
+[node name="VBox" type="VBoxContainer" parent="Panel/Margin"]
+layout_mode = 2
+
+[node name="TitleLabel" type="Label" parent="Panel/Margin/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"Title"
+text = "Lobby"
+
+[node name="HintLabel" type="Label" parent="Panel/Margin/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"Muted"
+text = "Waiting for players."
+autowrap_mode = 2
+
+[node name="PlayersLabel" type="Label" parent="Panel/Margin/VBox"]
+layout_mode = 2
+theme_type_variation = &"Heading"
+text = "Players"
+
+[node name="PlayerList" type="ItemList" parent="Panel/Margin/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="ReadyButton" type="Button" parent="Panel/Margin/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Ready up"
+
+[node name="StartButton" type="Button" parent="Panel/Margin/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+disabled = true
+text = "Waiting for players"
+
+[node name="LeaveButton" type="Button" parent="Panel/Margin/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Leave room"

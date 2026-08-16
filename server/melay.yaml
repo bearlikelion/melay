@@ -1,0 +1,37 @@
+# Melay server configuration. Every field is optional; the defaults below are what
+# the server uses when no file is mounted at all.
+#
+# Environment variables override this file:
+#   MELAY_ADDR, MELAY_DATABASE_URL, MELAY_LOG_LEVEL, MELAY_LOG_JSON,
+#   MELAY_ALLOW_UNREGISTERED, MELAY_MAX_ROOMS, MELAY_MAX_PLAYERS_PER_ROOM,
+#   MELAY_MAX_PACKET_SIZE
+
+addr: ":8890"
+database_url: "file:/data/melay.db"
+log_level: "info"
+log_json: true
+
+# Limits for game ids with no entry under `games:` below.
+default:
+  max_rooms: 50
+  max_players_per_room: 8
+  max_packet_size: 262144
+  # Set false to turn this into a closed relay that only serves the games listed below.
+  allow_unregistered: true
+
+# Per-game limits and secrets. One container serves as many games as you list here;
+# rooms are namespaced by game id and game version, so they never see each other.
+games:
+  spacewar:
+    max_rooms: 500
+    max_players_per_room: 16
+    # ${VAR} is read from the environment, so the secret stays out of this file.
+    api_key: "${SPACEWAR_KEY}"
+
+  dungeon-crawl:
+    max_rooms: 100
+    max_players_per_room: 4
+
+  # Temporarily refuse connections without deleting the entry.
+  retired-prototype:
+    disabled: true

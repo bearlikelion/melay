@@ -1,5 +1,7 @@
 # Godot
 demo/.godot/
+# Per-machine relay address, see demo/melay_local.cfg.example
+melay_local.cfg
 demo/build/
 demo/export_presets.cfg.local
 

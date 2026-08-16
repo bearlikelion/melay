@@ -39,6 +39,10 @@ const SETTING_GAME_VERSION: String = "melay/connection/game_version"
 const SETTING_API_KEY: String = "melay/connection/api_key"
 const SETTING_AUTO_ASSIGN: String = "melay/general/auto_assign_peer"
 
+## Optional file holding the values for this machine or this deployment. Keep it out of
+## version control so a personal relay address never lands in a public repository.
+const LOCAL_CONFIG_PATH: String = "res://melay_local.cfg"
+
 enum Mode {
 	REMOTE,
 	LOCAL,
@@ -53,6 +57,7 @@ var auto_assign_peer: bool = true
 
 func _ready() -> void:
 	_apply_project_settings()
+	_apply_local_config()
 	_client.connected.connect(_on_client_connected)
 	_client.disconnected.connect(_on_client_disconnected)
 	_client.peer_ready.connect(_on_client_peer_ready)
@@ -207,6 +212,25 @@ func _apply_project_settings() -> void:
 	)
 	_client.api_key = ProjectSettings.get_setting(SETTING_API_KEY, _client.api_key)
 	auto_assign_peer = bool(ProjectSettings.get_setting(SETTING_AUTO_ASSIGN, true))
+
+
+# Read after the project settings so it wins, and before any configure() call so code
+# still has the final say.
+func _apply_local_config() -> void:
+	if not FileAccess.file_exists(LOCAL_CONFIG_PATH):
+		return
+
+	var config: ConfigFile = ConfigFile.new()
+	if config.load(LOCAL_CONFIG_PATH) != OK:
+		push_warning("Melay: could not read %s" % LOCAL_CONFIG_PATH)
+		return
+
+	_client.url = config.get_value("connection", "url", _client.url)
+	_client.game_id = config.get_value("connection", "game_id", _client.game_id)
+	_client.game_version = config.get_value(
+		"connection", "game_version", _client.game_version
+	)
+	_client.api_key = config.get_value("connection", "api_key", _client.api_key)
 
 
 func _on_client_connected() -> void:

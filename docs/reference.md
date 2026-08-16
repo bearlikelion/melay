@@ -11,7 +11,7 @@ Everything on the `Melay` autoload. Calls marked `await` return a `MelayResult`.
 
 | Call | Does |
 |---|---|
-| `Melay.configure(url, game_id, game_version)` | Point at a relay. Overrides project settings. |
+| `Melay.configure(url, game_id, game_version)` | Point at a relay. Wins over everything else. |
 | `Melay.set_display_name(name)` | Name other players see |
 | `Melay.set_api_key(key)` | Only if your relay requires one |
 

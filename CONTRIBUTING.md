@@ -32,6 +32,21 @@ cp -R addons/melay demo/addons/melay
 
 Remember to copy back before committing, or your addon changes stay in the demo only.
 
+## Pointing the demo at your own relay
+
+`demo/project.godot` deliberately contains no relay address, so nobody's personal deployment
+ends up in the repository. Create `demo/melay_local.cfg` instead:
+
+```ini
+[connection]
+
+url="wss://your-relay.example.com"
+```
+
+That file is git ignored and bundled into exports, so builds connect while the repository
+stays clean. Copy `demo/melay_local.cfg.example` to get started. Without it the demo falls
+back to `ws://127.0.0.1:8890`, which is what `docker compose up` gives you.
+
 ## Testing
 
 ```bash

@@ -68,7 +68,6 @@ melay_rotate_right={
 [melay]
 
 connection/game_id="melay-demo"
-connection/url="wss://relay.example.com"
 
 [physics]
 

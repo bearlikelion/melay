@@ -65,6 +65,28 @@ func _ready() -> void:
 You can also set these in *Project Settings > Melay* instead of calling `configure()`. Turn on
 **Advanced Settings** to see the section.
 
+### Keeping your relay address out of git
+
+Project settings live in `project.godot`, which you commit. If you would rather your own relay
+address did not end up in a public repository, put it in `melay_local.cfg` next to
+`project.godot`:
+
+```ini
+[connection]
+
+url="wss://your-relay.example.com"
+```
+
+Add that filename to `.gitignore`. Melay reads it if it is there, and it is bundled into
+exports, so your builds still connect while the repository stays clean. Copy
+`melay_local.cfg.example` to get started.
+
+Values are applied in this order, each overriding the one before:
+
+1. Project settings
+2. `melay_local.cfg`
+3. A `configure()` call in code
+
 ## 5. Host a room
 
 ```gdscript

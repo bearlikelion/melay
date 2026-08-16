@@ -1,0 +1,12 @@
+; Copy to melay_local.cfg and put your own relay address in it.
+; melay_local.cfg is git ignored, so your deployment stays out of the repository,
+; but it is included in exports so builds connect to the right place.
+;
+; These override Project Settings > Melay. A configure() call in code still wins.
+
+[connection]
+
+url="wss://your-relay.example.com"
+; game_id="my-game"
+; game_version="1.0.0"
+; api_key=""

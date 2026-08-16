@@ -1,0 +1,10 @@
+# Only needed to preview the site locally. GitHub Pages builds it without this file.
+source "https://rubygems.org"
+
+gem "jekyll", "~> 4.3"
+gem "jekyll-remote-theme"
+# Required by just-the-docs.
+gem "jekyll-include-cache"
+gem "jekyll-seo-tag"
+# Not bundled with Ruby 3 any more, and Jekyll's local server needs it.
+gem "webrick"

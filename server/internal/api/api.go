@@ -20,16 +20,18 @@ const defaultRange = 7 * 24 * time.Hour
 
 // Server wires the read-only views over the live hub and the analytics store.
 type Server struct {
-	hub   *hub.Hub
-	rooms *room.Manager
-	store store.Store
-	log   *slog.Logger
-	start time.Time
+	hub    *hub.Hub
+	rooms  *room.Manager
+	store  store.Store
+	log    *slog.Logger
+	start  time.Time
+	webDir string
 }
 
-// New builds the API handler set.
-func New(h *hub.Hub, rooms *room.Manager, st store.Store, log *slog.Logger) *Server {
-	return &Server{hub: h, rooms: rooms, store: st, log: log, start: time.Now()}
+// New builds the API handler set. webDir may be empty; when it points at a Godot web
+// export, the game is served at /play on the same origin as the relay.
+func New(h *hub.Hub, rooms *room.Manager, st store.Store, log *slog.Logger, webDir string) *Server {
+	return &Server{hub: h, rooms: rooms, store: st, log: log, start: time.Now(), webDir: webDir}
 }
 
 // Routes registers every HTTP route the server exposes, including the WebSocket
@@ -43,6 +45,16 @@ func (s *Server) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/health", s.handleHealth)
 	mux.HandleFunc("GET /api/v1/games", s.handleGames)
 	mux.HandleFunc("GET /api/v1/stats", s.handleStats)
+
+	if hasWebExport(s.webDir) {
+		mux.Handle("GET "+PlayPrefix, playHandler(s.webDir))
+		// So /play works as well as /play/.
+		mux.Handle("GET /play", http.RedirectHandler(PlayPrefix, http.StatusMovedPermanently))
+		s.log.Info("serving web export", "dir", s.webDir, "path", PlayPrefix)
+	} else if s.webDir != "" {
+		s.log.Warn("web dir has no index.html, not serving it", "dir", s.webDir)
+	}
+
 	mux.Handle("GET /", web.Handler())
 }
 
@@ -61,6 +73,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 		"status":     "ok",
 		"uptime_sec": int(time.Since(s.start).Seconds()),
 		"rooms":      s.rooms.TotalRooms(),
+		"web":        hasWebExport(s.webDir),
 	})
 }
 

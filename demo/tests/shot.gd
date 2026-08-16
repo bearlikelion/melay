@@ -7,7 +7,7 @@ extends Node
 const DEMO_SCENE: PackedScene = preload("res://game/melay_demo.tscn")
 
 var _out_dir: String = "/tmp"
-var _url: String = "ws://127.0.0.1:8890"
+var _url: String = ""
 var _demo: MelayDemo = null
 
 
@@ -26,7 +26,9 @@ func _ready() -> void:
 
 
 func _run() -> void:
-	Melay.configure(_url, "melay-demo-shot", "1.0.0")
+	# With no --url the project settings decide, which is what the demo itself uses.
+	if _url != "":
+		Melay.configure(_url, "melay-demo-shot", "1.0.0")
 
 	_demo = DEMO_SCENE.instantiate()
 	add_child(_demo)

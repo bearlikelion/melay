@@ -1,4 +1,4 @@
-// Package proto implements the Melay wire protocol described in docs/PROTOCOL.md.
+// Package proto implements the Melay wire protocol described in server/PROTOCOL.md.
 package proto
 
 import (

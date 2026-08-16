@@ -1,8 +1,15 @@
 # Godot
-.godot/
-build/
-export_presets.cfg.local
-demo/build/*
+demo/.godot/
+demo/build/
+demo/export_presets.cfg.local
+
+# Release artifacts
+dist/
+
+# Jekyll local preview
+docs/_site/
+docs/.jekyll-cache/
+docs/Gemfile.lock
 
 # Server
 server/melay

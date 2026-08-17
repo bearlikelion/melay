@@ -4,9 +4,10 @@ extends Control
 ## The arena. Every player drives their own paddle; the host alone simulates the ball
 ## and reports its state upward so the main scene can broadcast it.
 ##
-## Non-host peers do not just apply what arrives. They dead-reckon the ball forward
-## from the last known velocity and ease the drawn position onto that, so 20 updates
-## a second still look like continuous motion.
+## Non-host peers do not just apply what arrives. Each state is rolled forward by the
+## time it spent in flight, dead-reckoned between updates, and bounced off the peer's
+## own paddle straight away, so 20 updates a second still look like continuous motion
+## and a hit lands flush instead of a round trip late.
 
 signal leave_requested
 signal ball_synced(to: Vector2, velocity: Vector2)
@@ -26,6 +27,10 @@ const BALL_SMOOTHING: float = 18.0
 ## Past this much error a correction is a teleport, not a nudge, so stop easing.
 const BALL_SNAP_DISTANCE: float = 120.0
 
+## Older than this and the stream stalled, so rolling the state that far forward would
+## be guesswork rather than a correction.
+const BALL_MAX_EXTRAPOLATION: float = 0.25
+
 ## How much an off-centre hit angles the return, as a fraction of the serve speed.
 const SPIN_INFLUENCE: float = 0.5
 
@@ -41,11 +46,19 @@ const GO_LINGER: float = 0.6
 
 var _players: Dictionary = {}
 var _is_host: bool = false
+var _self_peer_id: int = 0
 var _active: bool = false
 var _ball_velocity: Vector2 = Vector2.ZERO
-var _ball_predicted: Vector2 = Vector2.ZERO
+
+## Where the ball actually is: the host's simulation, or a non-host's belief about it.
+## [code]_ball.position[/code] is only the drawn value easing towards this.
+var _ball_target: Vector2 = Vector2.ZERO
 var _ball_send_elapsed: float = 0.0
 var _ball_updates: int = 0
+
+## Seconds since this peer bounced the ball off its own paddle without the host having
+## confirmed it yet. Negative when nothing is outstanding.
+var _since_prediction: float = -1.0
 var _countdown_left: float = 0.0
 var _running: bool = false
 
@@ -57,16 +70,20 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	if not _active:
 		return
-
-	if not _running:
-		_tick_countdown(delta)
-		return
-
 	_tick_countdown(delta)
+	if _running and not _is_host:
+		_draw_ball(delta)
+
+
+# Stepped at a fixed rate, so a dropped frame cannot hand the ball a delta large enough
+# to carry it clean through a paddle.
+func _physics_process(delta: float) -> void:
+	if not _active or not _running:
+		return
 	if _is_host:
 		_simulate_ball(delta)
 	else:
-		_follow_ball(delta)
+		_predict_ball(delta)
 
 
 func setup(room: MelayRoom) -> void:
@@ -74,6 +91,7 @@ func setup(room: MelayRoom) -> void:
 		return
 
 	_is_host = room.is_host()
+	_self_peer_id = room.self_peer_id
 	_room_label.text = "Room %s   you are peer %d%s" % [
 		room.code, room.self_peer_id, "   host" if _is_host else "",
 	]
@@ -128,17 +146,25 @@ func set_stats(text: String) -> void:
 
 
 ## Applies an authoritative ball state from the host. Only non-hosts ever receive one.
-func apply_ball(to: Vector2, velocity: Vector2) -> void:
-	_ball_predicted = to
-	_ball_velocity = velocity
+## The age is how long the state spent in flight, rolled forward here so the drawn ball
+## is not a whole latency behind the arena the host is simulating.
+func apply_ball(to: Vector2, velocity: Vector2, age: float) -> void:
 	_ball_updates += 1
+	# Older than the bounce this peer already predicted, so it describes a world that no
+	# longer exists and would only undo the prediction.
+	if _since_prediction >= 0.0 and age > _since_prediction:
+		return
+
+	_since_prediction = -1.0
+	_ball_velocity = velocity
+	_ball_target = _advance_target(to, clampf(age, 0.0, BALL_MAX_EXTRAPOLATION))
 
 
 func get_ball_position() -> Vector2:
 	return _ball.position
 
 
-## Number of authoritative updates applied, so tests can tell prediction apart from
+## Number of authoritative updates received, so tests can tell prediction apart from
 ## packets actually arriving.
 func get_ball_update_count() -> int:
 	return _ball_updates
@@ -181,28 +207,35 @@ func _simulate_ball(delta: float) -> void:
 	if bounds.x <= 0.0 or bounds.y <= 0.0:
 		return
 
-	_ball.position += _ball_velocity * delta
-
-	var bounced: bool = false
-	if _ball.position.x <= 0.0 or _ball.position.x >= bounds.x:
-		_ball_velocity.x = -_ball_velocity.x
-		bounced = true
-	if _ball.position.y <= 0.0 or _ball.position.y >= bounds.y:
-		_ball_velocity.y = -_ball_velocity.y
-		bounced = true
-	_ball.position = _ball.position.clamp(Vector2.ZERO, bounds)
+	var before: Vector2 = _ball_velocity
+	_ball_target = _advance_target(_ball_target, delta)
+	var bounced: bool = _ball_velocity != before
 
 	if _bounce_off_players():
 		bounced = true
-
 	if bounced:
 		_apply_speedup()
+	_ball.position = _ball_target
 
 	_ball_send_elapsed += delta
 	# A bounce is what prediction cannot guess, so it skips the interval.
 	if bounced or _ball_send_elapsed >= BALL_SEND_INTERVAL:
 		_ball_send_elapsed = 0.0
-		ball_synced.emit(_ball.position, _ball_velocity)
+		ball_synced.emit(_ball_target, _ball_velocity)
+
+
+# Steps a position forward, reflecting off the walls the way the host's simulation does.
+func _advance_target(from: Vector2, delta: float) -> Vector2:
+	var bounds: Vector2 = _playfield.size - _ball.size
+	if bounds.x <= 0.0 or bounds.y <= 0.0:
+		return from
+
+	var to: Vector2 = from + _ball_velocity * delta
+	if to.x <= 0.0 or to.x >= bounds.x:
+		_ball_velocity.x = -_ball_velocity.x
+	if to.y <= 0.0 or to.y >= bounds.y:
+		_ball_velocity.y = -_ball_velocity.y
+	return to.clamp(Vector2.ZERO, bounds)
 
 
 func _apply_speedup() -> void:
@@ -211,25 +244,32 @@ func _apply_speedup() -> void:
 
 
 func _bounce_off_players() -> bool:
-	var radius: float = _ball.size.x * 0.5
-	var centre: Vector2 = _ball.position + _ball.size * 0.5
-
 	for peer_id: int in _players:
-		var player: DemoPlayer = _players[peer_id]
-		if not is_instance_valid(player):
-			continue
-		if _reflect_off_paddle(player, centre, radius):
+		if _reflect_off_paddle(_players[peer_id]):
 			return true
 	return false
 
 
-# Paddles rotate, so this is a circle against an oriented box, solved in local space.
-func _reflect_off_paddle(player: DemoPlayer, centre: Vector2, radius: float) -> bool:
-	var angle: float = player.rotation
+# Waiting for the host to confirm a hit costs a round trip, and this peer already knows
+# its own paddle exactly, so bounce now and let the next update settle any disagreement.
+func _predict_own_bounce() -> void:
+	var player: DemoPlayer = _players.get(_self_peer_id, null)
+	if player != null and _reflect_off_paddle(player):
+		_apply_speedup()
+		_since_prediction = 0.0
+
+
+# A circle against an axis-aligned box, resolved out along the shallowest escape.
+func _reflect_off_paddle(player: DemoPlayer) -> bool:
+	if not is_instance_valid(player):
+		return false
+
+	var radius: float = _ball.size.x * 0.5
+	var centre: Vector2 = _ball_target + _ball.size * 0.5
 	var paddle_centre: Vector2 = player.centre()
 	var half: Vector2 = DemoPlayer.SIZE * 0.5
 
-	var local: Vector2 = (centre - paddle_centre).rotated(-angle)
+	var local: Vector2 = centre - paddle_centre
 	var closest: Vector2 = local.clamp(-half, half)
 	var offset: Vector2 = local - closest
 
@@ -248,44 +288,36 @@ func _reflect_off_paddle(player: DemoPlayer, centre: Vector2, radius: float) -> 
 		if normal == Vector2.ZERO:
 			normal = Vector2.UP
 
-	var velocity_local: Vector2 = _ball_velocity.rotated(-angle)
-	if velocity_local.dot(normal) < 0.0:
-		velocity_local = velocity_local.bounce(normal)
+	if _ball_velocity.dot(normal) < 0.0:
+		_ball_velocity = _ball_velocity.bounce(normal)
 	# A hit away from the middle angles the return along the paddle's length.
-	velocity_local.x += (local.x / half.x) * BALL_SPEED * SPIN_INFLUENCE
+	_ball_velocity.x += (local.x / half.x) * BALL_SPEED * SPIN_INFLUENCE
 
-	_ball_velocity = velocity_local.rotated(angle)
-	_ball.position = paddle_centre + (closest + normal * radius).rotated(angle) \
-		- _ball.size * 0.5
+	_ball_target = paddle_centre + closest + normal * radius - _ball.size * 0.5
 	return true
 
 
-# Dead-reckons between updates and eases onto the result, so corrections read as nudges.
-func _follow_ball(delta: float) -> void:
-	var bounds: Vector2 = _playfield.size - _ball.size
-	if bounds.x <= 0.0 or bounds.y <= 0.0:
-		return
+# Dead-reckons between the host's updates, bouncing off this peer's own paddle as it goes.
+func _predict_ball(delta: float) -> void:
+	if _since_prediction >= 0.0:
+		_since_prediction += delta
+	_ball_target = _advance_target(_ball_target, delta)
+	_predict_own_bounce()
 
-	_ball_predicted += _ball_velocity * delta
 
-	# Mirrors the host's wall reflection so the guess cannot run off the field.
-	if _ball_predicted.x <= 0.0 or _ball_predicted.x >= bounds.x:
-		_ball_velocity.x = -_ball_velocity.x
-	if _ball_predicted.y <= 0.0 or _ball_predicted.y >= bounds.y:
-		_ball_velocity.y = -_ball_velocity.y
-	_ball_predicted = _ball_predicted.clamp(Vector2.ZERO, bounds)
-
-	if _ball.position.distance_to(_ball_predicted) > BALL_SNAP_DISTANCE:
-		_ball.position = _ball_predicted
+# The simulation steps at a fixed rate, so the drawn ball eases between those steps.
+func _draw_ball(delta: float) -> void:
+	if _ball.position.distance_to(_ball_target) > BALL_SNAP_DISTANCE:
+		_ball.position = _ball_target
 		return
 	_ball.position = _ball.position.lerp(
-		_ball_predicted, clampf(BALL_SMOOTHING * delta, 0.0, 1.0)
+		_ball_target, clampf(BALL_SMOOTHING * delta, 0.0, 1.0)
 	)
 
 
 func _reset_ball() -> void:
-	_ball.position = (_playfield.size - _ball.size) * 0.5
-	_ball_predicted = _ball.position
+	_ball_target = (_playfield.size - _ball.size) * 0.5
+	_ball.position = _ball_target
 
 	# Served towards a paddle, so a rally starts instead of a drift along a wall.
 	var direction: Vector2 = Vector2.DOWN.rotated(randf_range(-PI / 4.0, PI / 4.0))

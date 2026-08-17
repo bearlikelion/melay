@@ -45,7 +45,11 @@ type Hello struct {
 
 // Limits are the server-side caps a client must respect.
 type Limits struct {
-	MaxPacketSize     int `json:"max_packet_size"`
+	MaxPacketSize int `json:"max_packet_size"`
+	// MaxMessageSize is the largest packet a client may send once fragmented.
+	// Its absence marks a relay that predates fragmentation, so clients that see
+	// no value must keep every packet inside MaxPacketSize.
+	MaxMessageSize    int `json:"max_message_size,omitempty"`
 	MaxPlayersPerRoom int `json:"max_players_per_room"`
 	MaxRooms          int `json:"max_rooms"`
 	MaxNameLength     int `json:"max_name_length"`

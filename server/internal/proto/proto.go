@@ -14,26 +14,28 @@ const Version = 1
 type Op uint8
 
 const (
-	OpHello       Op = 0x01
-	OpRoomCreate  Op = 0x02
-	OpRoomJoin    Op = 0x03
-	OpRoomLeave   Op = 0x04
-	OpRoomList    Op = 0x05
-	OpRelay       Op = 0x06
-	OpPing        Op = 0x07
-	OpSnapshotPut Op = 0x08
-	OpTrack       Op = 0x09
+	OpHello         Op = 0x01
+	OpRoomCreate    Op = 0x02
+	OpRoomJoin      Op = 0x03
+	OpRoomLeave     Op = 0x04
+	OpRoomList      Op = 0x05
+	OpRelay         Op = 0x06
+	OpPing          Op = 0x07
+	OpSnapshotPut   Op = 0x08
+	OpTrack         Op = 0x09
+	OpRelayFragment Op = 0x0A
 
-	OpWelcome     Op = 0x81
-	OpRoomState   Op = 0x82
-	OpPeerJoin    Op = 0x83
-	OpPeerLeave   Op = 0x84
-	OpRelayOut    Op = 0x85
-	OpPong        Op = 0x86
-	OpHostChanged Op = 0x87
-	OpSnapshotGet Op = 0x88
-	OpError       Op = 0x89
-	OpRoomListOut Op = 0x8A
+	OpWelcome          Op = 0x81
+	OpRoomState        Op = 0x82
+	OpPeerJoin         Op = 0x83
+	OpPeerLeave        Op = 0x84
+	OpRelayOut         Op = 0x85
+	OpPong             Op = 0x86
+	OpHostChanged      Op = 0x87
+	OpSnapshotGet      Op = 0x88
+	OpError            Op = 0x89
+	OpRoomListOut      Op = 0x8A
+	OpRelayFragmentOut Op = 0x8B
 )
 
 func (o Op) String() string {
@@ -56,6 +58,8 @@ func (o Op) String() string {
 		return "SNAPSHOT_PUT"
 	case OpTrack:
 		return "TRACK"
+	case OpRelayFragment:
+		return "RELAY_FRAGMENT"
 	case OpWelcome:
 		return "WELCOME"
 	case OpRoomState:
@@ -76,6 +80,8 @@ func (o Op) String() string {
 		return "ERROR"
 	case OpRoomListOut:
 		return "ROOM_LIST_OUT"
+	case OpRelayFragmentOut:
+		return "RELAY_FRAGMENT_OUT"
 	}
 	return fmt.Sprintf("OP(0x%02X)", uint8(o))
 }
@@ -140,6 +146,58 @@ func EncodeRelay(from int32, channel uint8, mode TransferMode, packet []byte) []
 	buf[5] = channel
 	buf[6] = byte(mode)
 	copy(buf[1+relayHeaderLen:], packet)
+	return buf
+}
+
+// fragmentHeaderLen is the relay header plus u16 message id, index and count, and the
+// u32 length the slices add up to.
+const fragmentHeaderLen = relayHeaderLen + 10
+
+// FragmentHeader describes one slice of a packet too large for a single frame.
+// Channel and Mode carry what the sender originally asked for, so the receiving
+// peer can report them once the packet is whole again.
+type FragmentHeader struct {
+	RelayHeader
+	MessageID uint16
+	Index     uint16
+	Count     uint16
+	// Total is the whole message in bytes, which is what bounds a message exactly
+	// without the relay ever buffering one.
+	Total uint32
+}
+
+// DecodeRelayFragment splits a fragment payload into its header and the slice.
+// The returned slice aliases payload.
+func DecodeRelayFragment(payload []byte) (FragmentHeader, []byte, error) {
+	if len(payload) < fragmentHeaderLen {
+		return FragmentHeader{}, nil, ErrShortFrame
+	}
+	h := FragmentHeader{
+		RelayHeader: RelayHeader{
+			Peer:    int32(binary.LittleEndian.Uint32(payload[0:4])),
+			Channel: payload[4],
+			Mode:    TransferMode(payload[5]),
+		},
+		MessageID: binary.LittleEndian.Uint16(payload[6:8]),
+		Index:     binary.LittleEndian.Uint16(payload[8:10]),
+		Count:     binary.LittleEndian.Uint16(payload[10:12]),
+		Total:     binary.LittleEndian.Uint32(payload[12:16]),
+	}
+	return h, payload[fragmentHeaderLen:], nil
+}
+
+// EncodeRelayFragment builds an outbound fragment frame in a single allocation.
+func EncodeRelayFragment(from int32, h FragmentHeader, slice []byte) []byte {
+	buf := make([]byte, 1+fragmentHeaderLen+len(slice))
+	buf[0] = byte(OpRelayFragmentOut)
+	binary.LittleEndian.PutUint32(buf[1:5], uint32(from))
+	buf[5] = h.Channel
+	buf[6] = byte(h.Mode)
+	binary.LittleEndian.PutUint16(buf[7:9], h.MessageID)
+	binary.LittleEndian.PutUint16(buf[9:11], h.Index)
+	binary.LittleEndian.PutUint16(buf[11:13], h.Count)
+	binary.LittleEndian.PutUint32(buf[13:17], h.Total)
+	copy(buf[1+fragmentHeaderLen:], slice)
 	return buf
 }
 

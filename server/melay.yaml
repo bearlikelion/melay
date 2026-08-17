@@ -4,7 +4,7 @@
 # Environment variables override this file:
 #   MELAY_ADDR, MELAY_DATABASE_URL, MELAY_LOG_LEVEL, MELAY_LOG_JSON,
 #   MELAY_ALLOW_UNREGISTERED, MELAY_MAX_ROOMS, MELAY_MAX_PLAYERS_PER_ROOM,
-#   MELAY_MAX_PACKET_SIZE
+#   MELAY_MAX_PACKET_SIZE, MELAY_MAX_MESSAGE_SIZE
 
 addr: ":8890"
 database_url: "file:/data/melay.db"
@@ -16,6 +16,9 @@ default:
   max_rooms: 50
   max_players_per_room: 8
   max_packet_size: 262144
+  # The largest packet a game may send. Anything above max_packet_size is split into
+  # frames by the addon and put back together by the receiving client.
+  max_message_size: 8388608
   # Set false to turn this into a closed relay that only serves the games listed below.
   allow_unregistered: true
 

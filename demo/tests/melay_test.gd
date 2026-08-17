@@ -14,6 +14,13 @@ const TIMEOUT_SECONDS: float = 30.0
 
 const POLL_INTERVAL: float = 0.1
 
+## Comfortably past the relay's default frame limit, so the transport has to split it.
+const BULK_SIZE: int = 300_000
+
+## The transport writes from _process, so quitting the instant a check passes can strand
+## whatever it still has queued. Give it a moment to drain first.
+const DRAIN_SECONDS: float = 0.5
+
 enum Role {
 	HOST,
 	GUEST,
@@ -26,6 +33,8 @@ var _url: String = "ws://127.0.0.1:8890"
 var _failures: Array[String] = []
 var _pong_received: bool = false
 var _peer_joined_seen: bool = false
+var _bulk_received: bool = false
+var _bulk_acked: bool = false
 
 
 func _ready() -> void:
@@ -92,6 +101,10 @@ func _run_host() -> void:
 		return
 
 	_require(_peer_joined_seen, "host never saw peer_joined")
+
+	if not await _wait_until(func() -> bool: return _bulk_received):
+		_fail("never received the guest's oversized packet")
+		return
 	_finish()
 
 
@@ -127,6 +140,17 @@ func _run_guest() -> void:
 	if not await _wait_until(func() -> bool: return _pong_received):
 		_fail("never received a pong from the host")
 		return
+
+	_require(
+		Melay.get_max_message_size() > Melay.get_limits().get("max_packet_size", 0),
+		"relay did not advertise a message ceiling above its frame limit"
+	)
+	_log("sending %d bytes, which the transport has to fragment" % BULK_SIZE)
+	bulk.rpc_id(1, _bulk_payload())
+
+	if not await _wait_until(func() -> bool: return _bulk_acked):
+		_fail("host never acknowledged the oversized packet")
+		return
 	_finish()
 
 
@@ -149,6 +173,33 @@ func pong(message: String) -> void:
 	if _role == Role.HOST:
 		return
 	_pong_received = true
+
+
+# Larger than one frame, so this only arrives if the transport split it on the way out
+# and put it back together on the way in.
+@rpc("any_peer", "reliable")
+func bulk(data: PackedByteArray) -> void:
+	var sender: int = multiplayer.get_remote_sender_id()
+	_log("bulk packet of %d bytes from peer %d" % [data.size(), sender])
+	_require(data.size() == BULK_SIZE, "bulk packet is %d bytes, want %d" % [
+		data.size(), BULK_SIZE,
+	])
+	_require(data == _bulk_payload(), "bulk packet came back corrupted")
+	_bulk_received = true
+	bulk_ack.rpc_id(sender)
+
+
+@rpc("any_peer", "reliable")
+func bulk_ack() -> void:
+	_bulk_acked = true
+
+
+func _bulk_payload() -> PackedByteArray:
+	var data: PackedByteArray = PackedByteArray()
+	data.resize(BULK_SIZE)
+	for i: int in BULK_SIZE:
+		data.encode_u8(i, i % 251)
+	return data
 
 
 func _on_peer_joined(info: MelayPeerInfo) -> void:
@@ -220,6 +271,7 @@ func _start_timeout() -> void:
 
 
 func _finish() -> void:
+	await get_tree().create_timer(DRAIN_SECONDS).timeout
 	if _failures.is_empty():
 		print("[%s] ALL CHECKS PASSED" % _role_name())
 		get_tree().quit(0)

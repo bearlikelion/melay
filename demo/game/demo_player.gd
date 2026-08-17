@@ -1,11 +1,10 @@
 class_name DemoPlayer
 extends ColorRect
 
-## One player's paddle. The owning peer drives it from input and broadcasts position
-## and angle; everyone else interpolates towards the last state they were told.
+## One player's paddle. The owning peer drives it side to side from input and broadcasts
+## its position; everyone else interpolates towards the last state they were told.
 
 const SPEED: float = 320.0
-const ROTATE_SPEED: float = 3.0
 const SIZE: Vector2 = Vector2(104.0, 22.0)
 
 ## State goes out 20 times a second rather than every frame, which is plenty for
@@ -35,7 +34,6 @@ var peer_id: int = 0
 var movement_enabled: bool = false
 
 var _target_position: Vector2 = Vector2.ZERO
-var _target_rotation: float = 0.0
 var _send_elapsed: float = 0.0
 var _grace_left: float = START_GRACE
 
@@ -45,22 +43,20 @@ var _grace_left: float = START_GRACE
 func _ready() -> void:
 	custom_minimum_size = SIZE
 	size = SIZE
-	pivot_offset = SIZE * 0.5
 	_target_position = position
-	_target_rotation = rotation
 
 
 func _process(delta: float) -> void:
 	if is_multiplayer_authority():
-		if movement_enabled:
-			_drive(delta)
-	else:
-		var weight: float = clampf(SMOOTHING * delta, 0.0, 1.0)
-		position = position.lerp(_target_position, weight)
-		rotation = lerp_angle(rotation, _target_rotation, weight)
+		return
+	position = position.lerp(_target_position, clampf(SMOOTHING * delta, 0.0, 1.0))
 
-	# The label rides on the paddle, so undo the paddle's spin to keep it readable.
-	_name_label.rotation = -rotation
+
+# Driven at a fixed rate so the paddle the host collides against advances in step with
+# the ball rather than at whatever the frame rate happens to be.
+func _physics_process(delta: float) -> void:
+	if movement_enabled and is_multiplayer_authority():
+		_drive(delta)
 
 
 ## Called by the arena straight after add_child, so the label is already available.
@@ -82,7 +78,6 @@ func setup(p_peer_id: int, display_name: String, is_host: bool) -> void:
 func teleport(to: Vector2) -> void:
 	position = to
 	_target_position = to
-	_target_rotation = rotation
 
 
 ## Centre of the paddle in its parent's space, which is what collision works against.
@@ -91,22 +86,16 @@ func centre() -> Vector2:
 
 
 @rpc("authority", "unreliable_ordered", "call_remote")
-func remote_state(to: Vector2, angle: float) -> void:
+func remote_state(to: Vector2) -> void:
 	_target_position = to
-	_target_rotation = angle
 
 
 func _drive(delta: float) -> void:
-	var input: Vector2 = Input.get_vector(
-		"melay_move_left", "melay_move_right", "melay_move_up", "melay_move_down"
-	)
-	position += input * SPEED * delta
-
-	var spin: float = Input.get_axis("melay_rotate_left", "melay_rotate_right")
-	rotation = wrapf(rotation + spin * ROTATE_SPEED * delta, -PI, PI)
+	var direction: float = Input.get_axis("melay_move_left", "melay_move_right")
+	position.x += direction * SPEED * delta
 
 	var bounds: Vector2 = get_parent_area_size() - SIZE
-	position = position.clamp(Vector2.ZERO, bounds.max(Vector2.ZERO))
+	position.x = clampf(position.x, 0.0, maxf(bounds.x, 0.0))
 
 	if _grace_left > 0.0:
 		_grace_left -= delta
@@ -116,4 +105,4 @@ func _drive(delta: float) -> void:
 	if _send_elapsed < SEND_INTERVAL:
 		return
 	_send_elapsed = 0.0
-	remote_state.rpc(position, rotation)
+	remote_state.rpc(position)

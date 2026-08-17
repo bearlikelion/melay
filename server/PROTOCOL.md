@@ -45,6 +45,7 @@ older one degrades instead of disconnecting.
 | `0x07` | `PING` | binary |
 | `0x08` | `SNAPSHOT_PUT` | binary (reserved) |
 | `0x09` | `TRACK` | JSON |
+| `0x0A` | `RELAY_FRAGMENT` | binary |
 
 | Op | Server to client | Payload |
 |---|---|---|
@@ -58,6 +59,7 @@ older one degrades instead of disconnecting.
 | `0x88` | `SNAPSHOT_GET` | binary (reserved) |
 | `0x89` | `ERROR` | JSON |
 | `0x8A` | `ROOM_LIST` | JSON |
+| `0x8B` | `RELAY_FRAGMENT` | binary |
 
 ## Handshake
 
@@ -92,6 +94,7 @@ may honour it or issue a fresh session, so the client must always read the retur
   "resumed": false,
   "limits": {
     "max_packet_size": 262144,
+    "max_message_size": 8388608,
     "max_players_per_room": 8,
     "max_rooms": 50,
     "max_name_length": 32
@@ -99,8 +102,13 @@ may honour it or issue a fresh session, so the client must always read the retur
 }
 ```
 
-`limits.max_packet_size` is what the client must report from
-`MultiplayerPeerExtension._get_max_packet_size`.
+`limits.max_packet_size` is the largest packet one frame carries.
+`limits.max_message_size` is the largest a game may send, reached by splitting it across
+frames, and is what the client reports from `MultiplayerPeerExtension._get_max_packet_size`.
+
+A relay that omits `max_message_size` does not route `RELAY_FRAGMENT`. Clients must treat its
+absence as a ceiling of `max_packet_size` and never fragment, since unknown opcodes are
+ignored rather than refused and the fragments would be dropped without a word.
 
 ## Rooms
 
@@ -228,6 +236,46 @@ The sender never receives its own packet back, in any of the three cases.
 `mode` mirrors `MultiplayerPeer.TransferMode`: `0` unreliable, `1` unreliable ordered, `2`
 reliable. `channel` is the Godot transfer channel, `0..255`. Both are copied unchanged to the
 receiver so it can answer `_get_packet_channel` and `_get_packet_mode` truthfully.
+
+### Fragmentation
+
+A packet above `limits.max_packet_size` is split by the sending client and put back together
+by the receiving one. The relay routes the pieces and holds none of them.
+
+```
+client to server:
++-------+------------+-----------+--------+---------+--------+---------+-----------+-------+
+| u8 op | i32 target | u8 channel| u8 mode| u16 msg | u16 idx| u16 cnt | u32 total | slice |
++-------+------------+-----------+--------+---------+--------+---------+-----------+-------+
+
+server to client:
++-------+------------+-----------+--------+---------+--------+---------+-----------+-------+
+| u8 op | i32 from   | u8 channel| u8 mode| u16 msg | u16 idx| u16 cnt | u32 total | slice |
++-------+------------+-----------+--------+---------+--------+---------+-----------+-------+
+```
+
+The header is the relay header plus ten bytes. `target`, `channel` and `mode` mean what they
+do for `RELAY`, and `channel` and `mode` are the sender's original request rather than how the
+fragment travels. `msg` identifies the message, `idx` the slice within it, `cnt` how many
+slices the message has, and `total` how many bytes they add up to.
+
+Every fragment of a message repeats the same `msg`, `cnt` and `total`, so a receiver can size
+the message from the first slice and treat a change in any of them as a broken set.
+
+Fragments are queued reliably whatever `mode` says, because the drop policy below sheds
+individual frames and one shed fragment strands the whole message. Slices therefore arrive in
+the order they were sent, and a receiver may treat a slice that does not continue the message
+in hand as a broken set and discard it.
+
+The relay rejects a fragment whose `idx` falls outside `cnt` with `bad_frame`, a `cnt` larger
+than `total` with `bad_frame`, a slice above `max_packet_size` with `packet_too_large`, and a
+`total` above `limits.max_message_size` with `packet_too_large`. That last check is what
+bounds a message without the relay ever buffering one, and it is exact: a message of exactly
+`max_message_size` is routed, one byte more is refused.
+
+A receiver must enforce `total` as well, discarding the set once the slices it has collected
+run past it. The relay forwards slices without adding them up, so a sender that understates
+`total` is only caught on the far side.
 
 ### Delivery and the drop policy
 

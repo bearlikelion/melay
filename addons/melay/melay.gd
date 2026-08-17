@@ -155,6 +155,19 @@ func get_status() -> MelayClient.Status:
 	return _client.get_status()
 
 
+## What the relay allows this game: max_packet_size, max_message_size,
+## max_players_per_room, max_rooms and max_name_length. Empty until connected.
+func get_limits() -> Dictionary:
+	return _client.get_limits()
+
+
+## The largest packet a game may send. Anything above the relay's frame limit is
+## split on the way out and put back together on the far side, so this is what
+## [code]get_max_packet_size[/code] would report if Godot exposed it to scripts.
+func get_max_message_size() -> int:
+	return _client.get_max_message_size()
+
+
 func is_in_room() -> bool:
 	return _client.get_status() == MelayClient.Status.IN_ROOM
 

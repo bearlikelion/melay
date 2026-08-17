@@ -390,3 +390,35 @@ func TestPasswordCheck(t *testing.T) {
 		t.Error("open room rejected a supplied password")
 	}
 }
+
+func TestRelayFragmentFollowsTheSameAddressing(t *testing.T) {
+	_, r, peers := newTestRoom(t, 4)
+
+	r.RelayFragment(1, proto.FragmentHeader{
+		RelayHeader: proto.RelayHeader{Peer: -3, Channel: 0, Mode: proto.Reliable},
+		Count:       2,
+		Total:       10,
+	}, []byte("slice"))
+
+	got := receivedIDs(peers)
+	want := []int32{2, 4}
+	if !equalIDs(got, want) {
+		t.Fatalf("fragment reached %v, want %v", got, want)
+	}
+}
+
+// A shed fragment strands the whole message, so fragments queue reliably even when
+// the sender asked for an unreliable packet.
+func TestRelayFragmentQueuesReliablyWhateverTheSenderAsked(t *testing.T) {
+	_, r, peers := newTestRoom(t, 2)
+
+	r.RelayFragment(1, proto.FragmentHeader{
+		RelayHeader: proto.RelayHeader{Peer: 2, Channel: 0, Mode: proto.Unreliable},
+		Count:       2,
+		Total:       10,
+	}, []byte("slice"))
+
+	if got := peers[2].modes[0]; got != proto.Reliable {
+		t.Fatalf("queued mode = %d, want Reliable", got)
+	}
+}

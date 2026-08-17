@@ -1,8 +1,8 @@
-[gd_scene load_steps=2 format=3 uid="uid://dm3lygamescreen"]
+[gd_scene format=3 uid="uid://0xghl1dwje1b"]
 
-[ext_resource type="Script" path="res://game/screens/game_screen.gd" id="1_game"]
+[ext_resource type="Script" uid="uid://dgy66oh3x51cb" path="res://game/screens/game_screen.gd" id="1_game"]
 
-[node name="GameScreen" type="Control"]
+[node name="GameScreen" type="Control" unique_id=640715313]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
@@ -11,7 +11,7 @@ grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1_game")
 
-[node name="ArenaFrame" type="Panel" parent="."]
+[node name="ArenaFrame" type="Panel" parent="." unique_id=205923070]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -24,7 +24,7 @@ grow_horizontal = 2
 grow_vertical = 2
 theme_type_variation = &"Arena"
 
-[node name="Playfield" type="Control" parent="."]
+[node name="Playfield" type="Control" parent="." unique_id=41761544]
 unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 15
@@ -37,7 +37,7 @@ offset_bottom = -16.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="Ball" type="ColorRect" parent="Playfield"]
+[node name="Ball" type="ColorRect" parent="Playfield" unique_id=1519064210]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(18, 18)
 layout_mode = 0
@@ -45,7 +45,7 @@ offset_right = 18.0
 offset_bottom = 18.0
 color = Color(0.937, 0.855, 0.42, 1)
 
-[node name="CountdownLabel" type="Label" parent="."]
+[node name="CountdownLabel" type="Label" parent="." unique_id=1276360961]
 unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 15
@@ -59,7 +59,7 @@ theme_type_variation = &"Countdown"
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="Hud" type="VBoxContainer" parent="."]
+[node name="Hud" type="VBoxContainer" parent="." unique_id=1204009264]
 layout_mode = 1
 anchors_preset = 10
 anchor_right = 1.0
@@ -69,16 +69,16 @@ offset_right = -120.0
 offset_bottom = 60.0
 grow_horizontal = 2
 
-[node name="RoomLabel" type="Label" parent="Hud"]
+[node name="RoomLabel" type="Label" parent="Hud" unique_id=193104232]
 unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"Heading"
 
-[node name="StatsLabel" type="Label" parent="Hud"]
+[node name="StatsLabel" type="Label" parent="Hud" unique_id=805107610]
 unique_name_in_owner = true
 layout_mode = 2
 
-[node name="LeaveButton" type="Button" parent="."]
+[node name="LeaveButton" type="Button" parent="." unique_id=1547837521]
 unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 1

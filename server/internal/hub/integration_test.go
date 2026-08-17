@@ -2,6 +2,7 @@ package hub_test
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -532,5 +533,145 @@ func TestDisconnectNotifiesRoom(t *testing.T) {
 	}
 	if leave.Reason != proto.ReasonDisconnected {
 		t.Fatalf("reason = %q, want %q", leave.Reason, proto.ReasonDisconnected)
+	}
+}
+
+func fragmentPayload(
+	target int32, channel uint8, mode proto.TransferMode,
+	msgID, index, count uint16, total uint32, slice []byte,
+) []byte {
+	buf := append(relayPayload(target, channel, mode, nil), make([]byte, 10)...)
+	binary.LittleEndian.PutUint16(buf[6:8], msgID)
+	binary.LittleEndian.PutUint16(buf[8:10], index)
+	binary.LittleEndian.PutUint16(buf[10:12], count)
+	binary.LittleEndian.PutUint32(buf[12:16], total)
+	return append(buf, slice...)
+}
+
+// Two peers in a room, one sending a packet in two pieces. The relay forwards each
+// piece as it arrives; putting them back together is the client's job.
+func TestFragmentsReachTheTargetInOrder(t *testing.T) {
+	srv := newServer(t, config.New())
+
+	host := dial(t, srv)
+	host.hello("spacewar", "1.0.0", "host")
+	host.sendJSON(proto.OpRoomCreate, proto.RoomCreate{MaxPlayers: 4})
+	code := host.roomState().Code
+
+	guest := dial(t, srv)
+	guest.hello("spacewar", "1.0.0", "guest")
+	guest.sendJSON(proto.OpRoomJoin, proto.RoomJoin{Code: code})
+	guest.roomState()
+	host.expect(proto.OpPeerJoin)
+
+	host.send(proto.OpRelayFragment, fragmentPayload(2, 3, proto.Unreliable, 9, 0, 2, 9, []byte("front")))
+	host.send(proto.OpRelayFragment, fragmentPayload(2, 3, proto.Unreliable, 9, 1, 2, 9, []byte("back")))
+
+	var rebuilt []byte
+	for i := uint16(0); i < 2; i++ {
+		h, slice, err := proto.DecodeRelayFragment(guest.expect(proto.OpRelayFragmentOut).Payload)
+		if err != nil {
+			t.Fatalf("decode fragment: %v", err)
+		}
+		if h.Peer != 1 {
+			t.Errorf("from = %d, want 1", h.Peer)
+		}
+		if h.Channel != 3 || h.Mode != proto.Unreliable {
+			t.Errorf("channel/mode = %d/%d, want 3/Unreliable", h.Channel, h.Mode)
+		}
+		if h.MessageID != 9 || h.Index != i || h.Count != 2 {
+			t.Errorf("msg %d idx %d of %d, want 9/%d/2", h.MessageID, h.Index, h.Count, i)
+		}
+		rebuilt = append(rebuilt, slice...)
+	}
+	if string(rebuilt) != "frontback" {
+		t.Fatalf("rebuilt = %q, want frontback", rebuilt)
+	}
+}
+
+func TestFragmentWithIndexOutsideItsMessageIsRejected(t *testing.T) {
+	srv := newServer(t, config.New())
+
+	c := dial(t, srv)
+	c.hello("spacewar", "1.0.0", "c")
+	c.sendJSON(proto.OpRoomCreate, proto.RoomCreate{MaxPlayers: 2})
+	c.roomState()
+
+	c.send(proto.OpRelayFragment, fragmentPayload(0, 0, proto.Reliable, 1, 4, 2, 10, []byte("stray")))
+
+	var e proto.Error
+	json.Unmarshal(c.read().Payload, &e)
+	if e.Code != proto.ErrBadFrame {
+		t.Fatalf("error code = %s, want bad_frame", e.Code)
+	}
+}
+
+// The length a sender declares is what bounds the message, since the relay holds no
+// fragments of its own to measure. Bounding it by fragment count instead would refuse
+// messages that fit, because the header a fragment carries eats into every slice.
+func TestMessageCeilingIsExact(t *testing.T) {
+	cfg := config.New()
+	cfg.Default.MaxMessageSize = cfg.Default.MaxPacketSize * 4
+	ceiling := uint32(cfg.Default.MaxMessageSize)
+	srv := newServer(t, cfg)
+
+	host := dial(t, srv)
+	host.hello("spacewar", "1.0.0", "host")
+	host.sendJSON(proto.OpRoomCreate, proto.RoomCreate{MaxPlayers: 2})
+	code := host.roomState().Code
+
+	guest := dial(t, srv)
+	guest.hello("spacewar", "1.0.0", "guest")
+	guest.sendJSON(proto.OpRoomJoin, proto.RoomJoin{Code: code})
+	guest.roomState()
+	host.expect(proto.OpPeerJoin)
+
+	host.send(proto.OpRelayFragment,
+		fragmentPayload(2, 0, proto.Reliable, 1, 0, 2, ceiling, []byte("at the limit")))
+	h, _, err := proto.DecodeRelayFragment(guest.expect(proto.OpRelayFragmentOut).Payload)
+	if err != nil {
+		t.Fatalf("decode fragment: %v", err)
+	}
+	if h.Total != ceiling {
+		t.Fatalf("total = %d, want %d", h.Total, ceiling)
+	}
+
+	host.send(proto.OpRelayFragment,
+		fragmentPayload(2, 0, proto.Reliable, 2, 0, 2, ceiling+1, []byte("one over")))
+
+	var e proto.Error
+	json.Unmarshal(host.read().Payload, &e)
+	if e.Code != proto.ErrPacketTooLarge {
+		t.Fatalf("error code = %s, want packet_too_large", e.Code)
+	}
+}
+
+// Every slice carries at least one byte, so more slices than bytes cannot be honest.
+func TestFragmentCountBeyondItsMessageLengthIsRejected(t *testing.T) {
+	srv := newServer(t, config.New())
+
+	c := dial(t, srv)
+	c.hello("spacewar", "1.0.0", "c")
+	c.sendJSON(proto.OpRoomCreate, proto.RoomCreate{MaxPlayers: 2})
+	c.roomState()
+
+	c.send(proto.OpRelayFragment, fragmentPayload(0, 0, proto.Reliable, 1, 0, 8, 4, []byte("short")))
+
+	var e proto.Error
+	json.Unmarshal(c.read().Payload, &e)
+	if e.Code != proto.ErrBadFrame {
+		t.Fatalf("error code = %s, want bad_frame", e.Code)
+	}
+}
+
+func TestWelcomeAdvertisesTheMessageCeiling(t *testing.T) {
+	srv := newServer(t, config.New())
+
+	c := dial(t, srv)
+	welcome := c.hello("spacewar", "1.0.0", "c")
+
+	if welcome.Limits.MaxMessageSize < welcome.Limits.MaxPacketSize {
+		t.Fatalf("max_message_size = %d, want at least max_packet_size %d",
+			welcome.Limits.MaxMessageSize, welcome.Limits.MaxPacketSize)
 	}
 }

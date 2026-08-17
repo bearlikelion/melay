@@ -51,7 +51,8 @@ joining, lobbies and starting a match.
 ## What you get
 
 Rooms with share codes · a public room list · per game analytics · a clock every player agrees
-on · version safety so old builds cannot join new ones.
+on · packets too large for one frame split and rebuilt for you · version safety so old builds
+cannot join new ones.
 
 ## What it is not
 

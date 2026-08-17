@@ -154,3 +154,72 @@ func TestEncodeJSONPrefixesOpcode(t *testing.T) {
 		t.Fatalf("payload = %s", f.Payload)
 	}
 }
+
+func TestRelayFragmentRoundTrip(t *testing.T) {
+	cases := []struct {
+		name  string
+		from  int32
+		head  FragmentHeader
+		slice []byte
+	}{
+		{"first of two", 1, FragmentHeader{RelayHeader{0, 0, Reliable}, 7, 0, 2, 9}, []byte("front")},
+		{"last of many", 4, FragmentHeader{RelayHeader{2, 3, UnreliableOrdered}, 65535, 63, 64, 4096}, []byte("back")},
+		{"exclusion target", 2, FragmentHeader{RelayHeader{-3, 255, Unreliable}, 0, 1, 2, 4}, []byte{0xFF, 0x00}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f, err := Decode(EncodeRelayFragment(tc.from, tc.head, tc.slice))
+			if err != nil {
+				t.Fatalf("Decode: %v", err)
+			}
+			if f.Op != OpRelayFragmentOut {
+				t.Fatalf("op = %s, want RELAY_FRAGMENT_OUT", f.Op)
+			}
+
+			h, slice, err := DecodeRelayFragment(f.Payload)
+			if err != nil {
+				t.Fatalf("DecodeRelayFragment: %v", err)
+			}
+			if h.Peer != tc.from {
+				t.Errorf("peer = %d, want %d", h.Peer, tc.from)
+			}
+			if h.Channel != tc.head.Channel || h.Mode != tc.head.Mode {
+				t.Errorf("channel/mode = %d/%d, want %d/%d",
+					h.Channel, h.Mode, tc.head.Channel, tc.head.Mode)
+			}
+			if h.MessageID != tc.head.MessageID || h.Index != tc.head.Index || h.Count != tc.head.Count {
+				t.Errorf("msg %d idx %d of %d, want %d/%d/%d",
+					h.MessageID, h.Index, h.Count,
+					tc.head.MessageID, tc.head.Index, tc.head.Count)
+			}
+			if h.Total != tc.head.Total {
+				t.Errorf("total = %d, want %d", h.Total, tc.head.Total)
+			}
+			if !bytes.Equal(slice, tc.slice) {
+				t.Errorf("slice = %x, want %x", slice, tc.slice)
+			}
+		})
+	}
+}
+
+// The channel and mode a fragment carries are the sender's original request, not
+// the reliable mode it is queued under, so a reassembled packet reports the truth.
+func TestFragmentKeepsOriginalModeThroughEncoding(t *testing.T) {
+	head := FragmentHeader{RelayHeader{0, 2, Unreliable}, 1, 0, 3, 3}
+
+	f, _ := Decode(EncodeRelayFragment(1, head, []byte("x")))
+	h, _, err := DecodeRelayFragment(f.Payload)
+	if err != nil {
+		t.Fatalf("DecodeRelayFragment: %v", err)
+	}
+	if h.Mode != Unreliable {
+		t.Fatalf("mode = %d, want Unreliable", h.Mode)
+	}
+}
+
+func TestDecodeRelayFragmentRejectsTruncatedHeader(t *testing.T) {
+	if _, _, err := DecodeRelayFragment(make([]byte, fragmentHeaderLen-1)); err != ErrShortFrame {
+		t.Fatalf("err = %v, want ErrShortFrame", err)
+	}
+}

@@ -215,7 +215,7 @@ func _on_leave_requested() -> void:
 
 
 func _on_ball_synced(to: Vector2, velocity: Vector2) -> void:
-	_sync_ball.rpc(to, velocity)
+	_sync_ball.rpc(to, velocity, Melay.get_relay_time_us())
 
 
 @rpc("any_peer", "reliable", "call_local")
@@ -255,9 +255,18 @@ func _seconds_until(relay_us: int) -> float:
 
 
 @rpc("authority", "unreliable_ordered", "call_remote")
-func _sync_ball(to: Vector2, velocity: Vector2) -> void:
+func _sync_ball(to: Vector2, velocity: Vector2, sent_at_relay_us: int) -> void:
 	if _screen == Screen.GAME and _current != null:
-		_current.apply_ball(to, velocity)
+		_current.apply_ball(to, velocity, _age_of(sent_at_relay_us))
+
+
+## How long a host state spent in flight. Without a clock estimate there is nothing to
+## measure it against, so report none rather than a wrong one.
+func _age_of(sent_at_relay_us: int) -> float:
+	if not Melay.has_clock_sync():
+		return 0.0
+	var age_us: int = Melay.get_relay_time_us() - sent_at_relay_us
+	return maxf(float(age_us) / 1_000_000.0, 0.0)
 
 
 func _refresh_lobby() -> void:

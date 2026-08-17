@@ -55,6 +55,27 @@ Everything on the `Melay` autoload. Calls marked `await` return a `MelayResult`.
 | `Melay.get_room()` | `MelayRoom` |
 | `Melay.get_rtt_us()` | Round-trip time in microseconds |
 | `Melay.get_relay_time_us()` | Relay clock, the same for every player |
+| `Melay.get_limits()` | What the relay allows this game |
+| `Melay.get_max_message_size()` | Largest packet you may send |
+
+## Large packets
+
+Send one. A packet too big for a single frame is split on the way out and put back together on
+the far side, the way ENet does it, so an initial world state or a level blob travels without
+you chunking it yourself.
+
+```gdscript
+# No special call. This is an ordinary rpc that happens to be large.
+_receive_world.rpc_id(peer_id, world.serialise())
+```
+
+`Melay.get_max_message_size()` is the ceiling, 8 MB by default and set per game on the relay
+with `max_message_size`. Going over it fails loudly with a pushed error rather than silently
+dropping the packet, so size a full state against it.
+
+A relay older than fragmentation reports the frame limit instead, and the addon then refuses
+to split anything, because those frames would be dropped without a word. Check the number
+rather than assuming 8 MB.
 
 ## Analytics
 

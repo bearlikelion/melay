@@ -102,7 +102,7 @@ func _put_packet_script(buffer: PackedByteArray) -> Error:
 	if _connection_status != CONNECTION_CONNECTED:
 		return ERR_UNCONFIGURED
 	if buffer.size() > _max_packet_size:
-		push_error("Melay: packet of %d bytes exceeds the relay limit of %d" % [
+		push_error("Melay: packet of %d bytes exceeds the relay's message limit of %d" % [
 			buffer.size(), _max_packet_size,
 		])
 		return ERR_OUT_OF_MEMORY
@@ -138,7 +138,9 @@ func _is_refusing_new_connections() -> bool:
 	return _refuse_new_connections
 
 
-## Adopts the relay-assigned identity and marks the peer usable.
+## Adopts the relay-assigned identity and marks the peer usable. The size given is
+## the largest packet a game may send, which the transport splits across frames when
+## it has to, rather than what fits in one.
 func initialize(peer_id: int, max_packet_size: int) -> void:
 	_self_peer_id = peer_id
 	if max_packet_size > 0:

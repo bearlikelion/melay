@@ -39,7 +39,13 @@ func _run() -> void:
 	_check_spawn_points(screen)
 
 	screen = await _make_screen()
-	_check_rotated_paddle_bounce(screen)
+	_check_guest_predicts_own_bounce(screen)
+
+	screen = await _make_screen()
+	_check_stale_state_does_not_undo_prediction(screen)
+
+	screen = await _make_screen()
+	_check_flight_time_extrapolation(screen)
 
 
 ## Builds a host-side arena with one player, already past the countdown.
@@ -66,7 +72,7 @@ func _make_screen() -> GameScreen:
 
 func _check_wall_bounce(screen: GameScreen) -> void:
 	screen._players[1].position = Vector2(600.0, 600.0)
-	screen._ball.position = Vector2(4.0, 200.0)
+	screen._ball_target = Vector2(4.0, 200.0)
 	screen._ball_velocity = Vector2(-200.0, 0.0)
 
 	for i: int in MAX_STEPS:
@@ -82,7 +88,7 @@ func _check_player_bounce(screen: GameScreen) -> void:
 	player.position = Vector2(300.0, 300.0)
 
 	# Approaching the player's left face, vertically overlapping it.
-	screen._ball.position = Vector2(260.0, 310.0)
+	screen._ball_target = Vector2(260.0, 310.0)
 	screen._ball_velocity = Vector2(220.0, 0.0)
 	var speed_before: float = screen._ball_velocity.length()
 
@@ -101,7 +107,7 @@ func _check_player_bounce(screen: GameScreen) -> void:
 func _check_speed_cap(screen: GameScreen) -> void:
 	var player: DemoPlayer = screen._players[1]
 	player.position = Vector2(300.0, 300.0)
-	screen._ball.position = Vector2(260.0, 310.0)
+	screen._ball_target = Vector2(260.0, 310.0)
 	screen._ball_velocity = Vector2(GameScreen.BALL_MAX_SPEED * 4.0, 0.0)
 
 	for i: int in MAX_STEPS:
@@ -162,22 +168,66 @@ func _check_spawn_points(screen: GameScreen) -> void:
 	_pass("paddles start centred on opposite sides")
 
 
-# A paddle turned 90 degrees presents its short edge; an AABB test gets this wrong.
-func _check_rotated_paddle_bounce(screen: GameScreen) -> void:
+# A guest bounces off its own paddle without waiting for the host to confirm the hit.
+func _check_guest_predicts_own_bounce(screen: GameScreen) -> void:
+	screen._is_host = false
 	var player: DemoPlayer = screen._players[1]
-	player.position = Vector2(400.0, 300.0)
-	player.rotation = PI / 2.0
+	player.position = Vector2(300.0, 300.0)
 
-	var paddle_centre: Vector2 = player.centre()
-	screen._ball.position = paddle_centre + Vector2(0.0, 90.0) - screen._ball.size * 0.5
-	screen._ball_velocity = Vector2(0.0, -200.0)
+	screen.apply_ball(Vector2(260.0, 310.0), Vector2(220.0, 0.0), 0.0)
 
 	for i: int in MAX_STEPS:
-		screen._simulate_ball(STEP)
-		if screen._ball_velocity.y > 0.0:
-			_pass("ball reflected off a rotated paddle")
+		screen._predict_ball(STEP)
+		if screen._ball_velocity.x < 0.0:
+			_pass("guest predicted a bounce off its own paddle")
 			return
-	_fail("ball passed through a rotated paddle")
+	_fail("guest waited on the host and let the ball through its paddle")
+
+
+# The host cannot have seen a bounce it had not been told about yet, so a state older
+# than the prediction is stale and must not undo it.
+func _check_stale_state_does_not_undo_prediction(screen: GameScreen) -> void:
+	screen._is_host = false
+	screen._players[1].position = Vector2(300.0, 300.0)
+
+	screen.apply_ball(Vector2(260.0, 310.0), Vector2(220.0, 0.0), 0.0)
+	for i: int in MAX_STEPS:
+		screen._predict_ball(STEP)
+		if screen._ball_velocity.x < 0.0:
+			break
+	if screen._ball_velocity.x >= 0.0:
+		_fail("guest never predicted a bounce to begin with")
+		return
+
+	screen.apply_ball(Vector2(280.0, 310.0), Vector2(220.0, 0.0), 0.1)
+	if screen._ball_velocity.x > 0.0:
+		_fail("a stale host state undid the predicted bounce")
+		return
+
+	# Sent after the bounce, so this one is authoritative and has to land.
+	screen.apply_ball(Vector2(240.0, 310.0), Vector2(-190.0, 0.0), 0.0)
+	if absf(screen._ball_velocity.x + 190.0) > 1.0:
+		_fail("a fresh host state was rejected after the prediction")
+		return
+	_pass("stale states are ignored and fresh ones still land")
+
+
+# A state that spent time in flight is stale, so it has to be rolled forward on arrival.
+func _check_flight_time_extrapolation(screen: GameScreen) -> void:
+	screen._is_host = false
+	screen._players[1].position = Vector2(600.0, 600.0)
+
+	var sent_at: Vector2 = Vector2(200.0, 200.0)
+	var velocity: Vector2 = Vector2(400.0, 0.0)
+	screen.apply_ball(sent_at, velocity, 0.1)
+
+	var expected: float = sent_at.x + velocity.x * 0.1
+	if absf(screen._ball_target.x - expected) > 1.0:
+		_fail("state was not rolled forward (%.1f, want %.1f)" % [
+			screen._ball_target.x, expected,
+		])
+		return
+	_pass("host state is rolled forward by its flight time")
 
 
 func _pass(message: String) -> void:

@@ -1,15 +1,15 @@
-[gd_scene load_steps=2 format=3 uid="uid://dm3lydemoplayer"]
+[gd_scene format=3 uid="uid://0xdlmca51y1f"]
 
-[ext_resource type="Script" path="res://game/demo_player.gd" id="1_player"]
+[ext_resource type="Script" uid="uid://by853mkic1ji0" path="res://game/demo_player.gd" id="1_player"]
 
-[node name="DemoPlayer" type="ColorRect"]
+[node name="DemoPlayer" type="ColorRect" unique_id=321238473]
 custom_minimum_size = Vector2(104, 22)
 offset_right = 104.0
 offset_bottom = 22.0
 color = Color(0.357, 0.553, 0.933, 1)
 script = ExtResource("1_player")
 
-[node name="NameLabel" type="Label" parent="."]
+[node name="NameLabel" type="Label" parent="." unique_id=1278062726]
 unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 10

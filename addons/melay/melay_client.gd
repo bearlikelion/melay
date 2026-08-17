@@ -45,6 +45,9 @@ const INBOUND_BUFFER_SIZE: int = 1 << 20
 const OUTBOUND_BUFFER_SIZE: int = 1 << 20
 const MAX_QUEUED_PACKETS: int = 2048
 
+## Message ids are u16, so they wrap rather than grow.
+const MESSAGE_ID_LIMIT: int = 1 << 16
+
 var peer: MelayPeer = null
 
 var url: String = "ws://127.0.0.1:8890"
@@ -62,6 +65,15 @@ var _limits: Dictionary = {}
 var _hello_sent: bool = false
 var _pending: MelayRequest = null
 var _close_reason: String = ""
+
+## Zero until a relay says otherwise, which is what keeps a client from fragmenting
+## at a relay too old to route the frames.
+var _max_message_size: int = 0
+var _next_message_id: int = 0
+## One in-flight message per sender: fragments arrive in the order they were sent,
+## so a sender cannot have two on the way at once.
+var _partials: Dictionary[int, MelayPartialMessage] = {}
+var _outbox: Array[PackedByteArray] = []
 
 var _ping_elapsed: float = 0.0
 var _pings_outstanding: int = 0
@@ -221,6 +233,12 @@ func get_limits() -> Dictionary:
 	return _limits
 
 
+## The largest packet a game may send. Anything above the relay's frame limit is
+## split on the way out and put back together on the far side.
+func get_max_message_size() -> int:
+	return _message_ceiling()
+
+
 ## Round-trip time to the relay in microseconds, from the most recent pong.
 func get_rtt_us() -> int:
 	return _rtt_us
@@ -263,7 +281,9 @@ func _pump() -> void:
 		WebSocketPeer.STATE_OPEN:
 			if not _hello_sent:
 				_send_hello()
-			while _socket.get_available_packet_count() > 0:
+			_flush()
+			# A handler can resume an awaiting caller that disconnects mid-drain.
+			while _socket != null and _socket.get_available_packet_count() > 0:
 				_handle_frame(_socket.get_packet())
 		WebSocketPeer.STATE_CLOSED:
 			var reason: String = _close_reason
@@ -291,6 +311,17 @@ func _tick_heartbeat(delta: float) -> void:
 	_send(MelayProtocol.encode_ping(Time.get_ticks_usec()))
 
 
+# What one frame may carry, which is the relay's packet limit.
+func _frame_limit() -> int:
+	return int(_limits.get("max_packet_size", MelayPeer.DEFAULT_MAX_PACKET_SIZE))
+
+
+# What a game may send. A relay that never mentions a message size predates
+# fragmentation, so the frame limit is also the ceiling there.
+func _message_ceiling() -> int:
+	return maxi(_max_message_size, _frame_limit())
+
+
 func _endpoint_url() -> String:
 	var base: String = url.strip_edges().trim_suffix("/")
 	if base.ends_with("/ws"):
@@ -314,13 +345,29 @@ func _send_hello() -> void:
 func _send(frame: PackedByteArray) -> Error:
 	if _socket == null or _socket.get_ready_state() != WebSocketPeer.STATE_OPEN:
 		return ERR_UNAVAILABLE
-	return _socket.send(frame, WebSocketPeer.WRITE_MODE_BINARY)
+	_outbox.append(frame)
+	return _flush()
+
+
+# The socket's buffer is finite and a fragmented message can fill it in one go, so a
+# refused frame waits its turn here instead of being lost halfway through a message.
+func _flush() -> Error:
+	while not _outbox.is_empty():
+		var err: Error = _socket.send(_outbox[0], WebSocketPeer.WRITE_MODE_BINARY)
+		if err != OK:
+			if _outbox.size() > MAX_QUEUED_PACKETS:
+				disconnect_from_relay("the outbound queue overflowed")
+			return err
+		_outbox.remove_at(0)
+	return OK
 
 
 func _handle_frame(frame: PackedByteArray) -> void:
 	match MelayProtocol.peek_op(frame):
 		MelayProtocol.Op.RELAY_OUT:
 			_handle_relay(frame)
+		MelayProtocol.Op.RELAY_FRAGMENT_OUT:
+			_handle_fragment(frame)
 		MelayProtocol.Op.WELCOME:
 			_handle_welcome(MelayProtocol.decode_json(frame))
 		MelayProtocol.Op.ROOM_STATE:
@@ -350,9 +397,52 @@ func _handle_relay(frame: PackedByteArray) -> void:
 	)
 
 
+# A message is complete once its last slice lands. A slice that does not continue
+# the one in hand means the set was broken up, so what was collected is discarded.
+func _handle_fragment(frame: PackedByteArray) -> void:
+	if frame.size() < MelayProtocol.FRAGMENT_PACKET_OFFSET:
+		return
+
+	var from: int = frame.decode_s32(1)
+	var channel: int = frame.decode_u8(5)
+	var mode: int = frame.decode_u8(6)
+	var message_id: int = frame.decode_u16(7)
+	var index: int = frame.decode_u16(9)
+	var count: int = frame.decode_u16(11)
+	var total: int = frame.decode_u32(13)
+	if count < 2 or index >= count or count > total or total > _message_ceiling():
+		return
+
+	var partial: MelayPartialMessage = _partials.get(from, null)
+	if index == 0:
+		partial = MelayPartialMessage.new()
+		partial.message_id = message_id
+		partial.count = count
+		partial.total = total
+		_partials[from] = partial
+	elif partial == null or partial.message_id != message_id \
+	or partial.count != count or partial.total != total or partial.next != index:
+		_partials.erase(from)
+		return
+
+	partial.data.append_array(frame.slice(MelayProtocol.FRAGMENT_PACKET_OFFSET))
+	partial.next += 1
+	if partial.data.size() > total:
+		_partials.erase(from)
+		return
+	if partial.next < count:
+		return
+
+	_partials.erase(from)
+	if partial.data.size() != total:
+		return
+	peer.deliver_packet(partial.data, from, channel, mode as MultiplayerPeer.TransferMode)
+
+
 func _handle_welcome(data: Dictionary) -> void:
 	_session_id = data.get("session_id", "")
 	_limits = data.get("limits", {})
+	_max_message_size = int(_limits.get("max_message_size", 0))
 	_status = Status.CONNECTED
 	_pings_outstanding = 0
 	connected.emit()
@@ -369,7 +459,7 @@ func _handle_room_state(data: Dictionary) -> void:
 	_status = Status.IN_ROOM
 
 	if not was_in_room:
-		peer.initialize(_room.self_peer_id, int(_limits.get("max_packet_size", 0)))
+		peer.initialize(_room.self_peer_id, _message_ceiling())
 		# SceneMultiplayer must be listening before the existing members are announced.
 		peer_ready.emit(peer)
 		for peer_id: int in _room.other_peer_ids():
@@ -407,6 +497,7 @@ func _handle_peer_leave(data: Dictionary) -> void:
 	if info == null:
 		return
 	_room.peers.erase(peer_id)
+	_partials.erase(peer_id)
 	peer.remove_peer(peer_id)
 	peer_left.emit(info, data.get("reason", ""))
 
@@ -462,7 +553,27 @@ func _on_peer_packet_generated(
 ) -> void:
 	if _status != Status.IN_ROOM:
 		return
-	_send(MelayProtocol.encode_relay(target_peer, channel, mode, payload))
+	var frame_limit: int = _frame_limit()
+	if payload.size() <= frame_limit:
+		_send(MelayProtocol.encode_relay(target_peer, channel, mode, payload))
+		return
+
+	var slice_size: int = frame_limit - MelayProtocol.FRAGMENT_HEADER_SIZE
+	var count: int = ceili(float(payload.size()) / float(slice_size))
+	var message_id: int = _next_message_id
+	_next_message_id = (_next_message_id + 1) % MESSAGE_ID_LIMIT
+	for index: int in count:
+		var start: int = index * slice_size
+		_send(MelayProtocol.encode_fragment(
+			target_peer,
+			channel,
+			mode,
+			message_id,
+			index,
+			count,
+			payload.size(),
+			payload.slice(start, mini(start + slice_size, payload.size()))
+		))
 
 
 func _on_peer_close_requested() -> void:
@@ -475,6 +586,7 @@ func _exit_room() -> void:
 		return
 	_room = null
 	_status = Status.CONNECTED
+	_partials.clear()
 	peer.reset()
 	room_left.emit()
 
@@ -490,6 +602,9 @@ func _teardown(reason: String) -> void:
 	_pings_outstanding = 0
 	_clock_synced = false
 	_clock_drift_us = 0
+	_max_message_size = 0
+	_partials.clear()
+	_outbox.clear()
 	_socket = null
 	set_process(false)
 	peer.reset()
@@ -549,6 +664,17 @@ func _load_or_create_client_id() -> String:
 		file.store_string(generated)
 		file.close()
 	return generated
+
+
+class MelayPartialMessage:
+	extends RefCounted
+
+	var data: PackedByteArray = PackedByteArray()
+	var message_id: int = 0
+	var count: int = 0
+	var total: int = 0
+	## The index expected next, which doubles as how many slices have landed.
+	var next: int = 0
 
 
 class MelayRequest:

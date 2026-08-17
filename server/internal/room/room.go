@@ -122,8 +122,16 @@ func (r *Room) Leave(id int32) (empty bool) {
 // Relay fans a packet out using Godot's target addressing. The sender never gets
 // its own packet back, including in the broadcast and exclusion cases.
 func (r *Room) Relay(from, target int32, channel uint8, mode proto.TransferMode, packet []byte) {
-	frame := proto.EncodeRelay(from, channel, mode, packet)
+	r.fanout(from, target, mode, proto.EncodeRelay(from, channel, mode, packet))
+}
 
+// RelayFragment routes one slice of an oversized packet. Fragments queue reliably
+// whatever the sender asked for, because a shed fragment strands the whole message.
+func (r *Room) RelayFragment(from int32, h proto.FragmentHeader, slice []byte) {
+	r.fanout(from, h.Peer, proto.Reliable, proto.EncodeRelayFragment(from, h, slice))
+}
+
+func (r *Room) fanout(from, target int32, mode proto.TransferMode, frame []byte) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 

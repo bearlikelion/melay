@@ -23,8 +23,8 @@ import (
 // handshakeReadLimit applies until HELLO establishes the game's real packet limit.
 const handshakeReadLimit = 64 * 1024
 
-// frameOverhead covers the opcode plus the widest fixed header.
-const frameOverhead = 16
+// frameOverhead covers the opcode plus the widest fixed header, which is a fragment's.
+const frameOverhead = 24
 
 // drainGrace bounds how long a closing connection may spend flushing its queue.
 const drainGrace = 5 * time.Second
@@ -187,6 +187,8 @@ func (h *Hub) dispatch(c *Conn, f proto.Frame) bool {
 		h.handleRoomList(c, f.Payload)
 	case proto.OpRelay:
 		h.handleRelay(c, f.Payload)
+	case proto.OpRelayFragment:
+		h.handleRelayFragment(c, f.Payload)
 	case proto.OpPing:
 		h.handlePing(c, f.Payload)
 	case proto.OpTrack:
@@ -243,6 +245,7 @@ func (h *Hub) handleHello(c *Conn, payload []byte) bool {
 	c.displayName = sanitize(hello.DisplayName, config.DefaultMaxNameLength)
 	c.limits = proto.Limits{
 		MaxPacketSize:     resolved.MaxPacketSize,
+		MaxMessageSize:    resolved.MaxMessageSize,
 		MaxPlayersPerRoom: resolved.MaxPlayersPerRoom,
 		MaxRooms:          resolved.MaxRooms,
 		MaxNameLength:     config.DefaultMaxNameLength,
@@ -480,6 +483,46 @@ func (h *Hub) handleRelay(c *Conn, payload []byte) {
 
 	r.Relay(peerID, header.Peer, header.Channel, header.Mode, packet)
 	h.store.RecordBytes(c.game, int64(len(packet)))
+}
+
+// handleRelayFragment routes one slice of a packet too large for a single frame.
+// The relay holds no fragments: it checks the length the sender declares against the
+// message ceiling, then forwards each slice as it arrives.
+func (h *Hub) handleRelayFragment(c *Conn, payload []byte) {
+	r, peerID := c.currentRoom()
+	if r == nil {
+		c.sendError(proto.ErrNotInRoom, "cannot relay outside a room")
+		return
+	}
+
+	header, slice, err := proto.DecodeRelayFragment(payload)
+	if err != nil {
+		c.sendError(proto.ErrBadFrame, "malformed RELAY_FRAGMENT header")
+		return
+	}
+	if header.Count < 2 || header.Index >= header.Count {
+		c.sendError(proto.ErrBadFrame, "RELAY_FRAGMENT index outside its message")
+		return
+	}
+	// Every slice carries at least one byte, so more slices than bytes is a lie.
+	if uint32(header.Count) > header.Total {
+		c.sendError(proto.ErrBadFrame, "RELAY_FRAGMENT count exceeds its message length")
+		return
+	}
+	if len(slice) > c.limits.MaxPacketSize {
+		c.sendError(proto.ErrPacketTooLarge,
+			fmt.Sprintf("fragment of %d bytes exceeds the %d byte limit", len(slice), c.limits.MaxPacketSize))
+		return
+	}
+	if int64(header.Total) > int64(c.limits.MaxMessageSize) {
+		c.sendError(proto.ErrPacketTooLarge,
+			fmt.Sprintf("message of %d bytes exceeds the %d byte limit",
+				header.Total, c.limits.MaxMessageSize))
+		return
+	}
+
+	r.RelayFragment(peerID, header, slice)
+	h.store.RecordBytes(c.game, int64(len(slice)))
 }
 
 func (h *Hub) handlePing(c *Conn, payload []byte) {

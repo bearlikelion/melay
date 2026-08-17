@@ -17,6 +17,7 @@ const (
 	DefaultMaxRooms          = 50
 	DefaultMaxPlayersPerRoom = 8
 	DefaultMaxPacketSize     = 262144
+	DefaultMaxMessageSize    = 8 << 20
 	DefaultMaxNameLength     = 32
 	DefaultDatabaseURL       = "file:melay.db"
 )
@@ -26,6 +27,7 @@ type GameConfig struct {
 	MaxRooms          int    `yaml:"max_rooms"`
 	MaxPlayersPerRoom int    `yaml:"max_players_per_room"`
 	MaxPacketSize     int    `yaml:"max_packet_size"`
+	MaxMessageSize    int    `yaml:"max_message_size"`
 	APIKey            string `yaml:"api_key"`
 	Disabled          bool   `yaml:"disabled"`
 }
@@ -35,6 +37,7 @@ type Defaults struct {
 	MaxRooms          int  `yaml:"max_rooms"`
 	MaxPlayersPerRoom int  `yaml:"max_players_per_room"`
 	MaxPacketSize     int  `yaml:"max_packet_size"`
+	MaxMessageSize    int  `yaml:"max_message_size"`
 	AllowUnregistered bool `yaml:"allow_unregistered"`
 }
 
@@ -56,6 +59,7 @@ type Resolved struct {
 	MaxRooms          int
 	MaxPlayersPerRoom int
 	MaxPacketSize     int
+	MaxMessageSize    int
 	APIKey            string
 	Registered        bool
 }
@@ -73,6 +77,7 @@ func New() *Config {
 			MaxRooms:          DefaultMaxRooms,
 			MaxPlayersPerRoom: DefaultMaxPlayersPerRoom,
 			MaxPacketSize:     DefaultMaxPacketSize,
+			MaxMessageSize:    DefaultMaxMessageSize,
 			AllowUnregistered: true,
 		},
 	}
@@ -141,6 +146,9 @@ func (c *Config) applyEnv() {
 	if n, ok := envInt("MELAY_MAX_PACKET_SIZE"); ok {
 		c.Default.MaxPacketSize = n
 	}
+	if n, ok := envInt("MELAY_MAX_MESSAGE_SIZE"); ok {
+		c.Default.MaxMessageSize = n
+	}
 }
 
 func envInt(key string) (int, bool) {
@@ -174,6 +182,9 @@ func (c *Config) fillZeroes() {
 	if c.Default.MaxPacketSize <= 0 {
 		c.Default.MaxPacketSize = DefaultMaxPacketSize
 	}
+	if c.Default.MaxMessageSize <= 0 {
+		c.Default.MaxMessageSize = DefaultMaxMessageSize
+	}
 	if c.Games == nil {
 		c.Games = map[string]GameConfig{}
 	}
@@ -184,7 +195,7 @@ func (c *Config) validate() error {
 		if name == "" {
 			return fmt.Errorf("config: game with empty id")
 		}
-		if g.MaxPlayersPerRoom < 0 || g.MaxRooms < 0 || g.MaxPacketSize < 0 {
+		if g.MaxPlayersPerRoom < 0 || g.MaxRooms < 0 || g.MaxPacketSize < 0 || g.MaxMessageSize < 0 {
 			return fmt.Errorf("config: negative limit for game %q", name)
 		}
 	}
@@ -199,6 +210,7 @@ func (c *Config) Resolve(game string) Resolved {
 		MaxRooms:          c.Default.MaxRooms,
 		MaxPlayersPerRoom: c.Default.MaxPlayersPerRoom,
 		MaxPacketSize:     c.Default.MaxPacketSize,
+		MaxMessageSize:    c.Default.MaxMessageSize,
 	}
 	g, ok := c.Games[game]
 	if !ok {
@@ -214,6 +226,13 @@ func (c *Config) Resolve(game string) Resolved {
 	}
 	if g.MaxPacketSize > 0 {
 		r.MaxPacketSize = g.MaxPacketSize
+	}
+	if g.MaxMessageSize > 0 {
+		r.MaxMessageSize = g.MaxMessageSize
+	}
+	// A ceiling below one frame would refuse traffic a single RELAY carries fine.
+	if r.MaxMessageSize < r.MaxPacketSize {
+		r.MaxMessageSize = r.MaxPacketSize
 	}
 	return r
 }

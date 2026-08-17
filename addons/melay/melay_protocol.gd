@@ -13,6 +13,7 @@ enum Op {
 	PING = 0x07,
 	SNAPSHOT_PUT = 0x08,
 	TRACK = 0x09,
+	RELAY_FRAGMENT = 0x0A,
 
 	WELCOME = 0x81,
 	ROOM_STATE = 0x82,
@@ -24,6 +25,7 @@ enum Op {
 	SNAPSHOT_GET = 0x88,
 	ERROR = 0x89,
 	ROOM_LIST_OUT = 0x8A,
+	RELAY_FRAGMENT_OUT = 0x8B,
 }
 
 const VERSION: int = 1
@@ -65,6 +67,10 @@ const CODE_CANCELLED: String = "cancelled"
 const RELAY_HEADER_SIZE: int = 6
 const RELAY_PACKET_OFFSET: int = 1 + RELAY_HEADER_SIZE
 
+## The relay header plus the message id, index, count and total length a fragment carries.
+const FRAGMENT_HEADER_SIZE: int = RELAY_HEADER_SIZE + 10
+const FRAGMENT_PACKET_OFFSET: int = 1 + FRAGMENT_HEADER_SIZE
+
 const PONG_PAYLOAD_SIZE: int = 16
 
 
@@ -90,6 +96,33 @@ static func encode_relay(
 	frame.encode_u8(5, channel)
 	frame.encode_u8(6, mode)
 	frame.append_array(packet)
+	return frame
+
+
+## Builds one slice of a packet too large for a single frame. Channel and mode are
+## what the sender asked for, not the reliable mode the relay queues fragments under,
+## and total is the whole message, which is what lets the relay bound it exactly.
+static func encode_fragment(
+	target: int,
+	channel: int,
+	mode: int,
+	message_id: int,
+	index: int,
+	count: int,
+	total: int,
+	slice: PackedByteArray
+) -> PackedByteArray:
+	var frame: PackedByteArray = PackedByteArray()
+	frame.resize(FRAGMENT_PACKET_OFFSET)
+	frame.encode_u8(0, Op.RELAY_FRAGMENT)
+	frame.encode_s32(1, target)
+	frame.encode_u8(5, channel)
+	frame.encode_u8(6, mode)
+	frame.encode_u16(7, message_id)
+	frame.encode_u16(9, index)
+	frame.encode_u16(11, count)
+	frame.encode_u32(13, total)
+	frame.append_array(slice)
 	return frame
 
 

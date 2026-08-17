@@ -34,6 +34,12 @@ window/stretch/mode="canvas_items"
 
 enabled=PackedStringArray("res://addons/melay/plugin.cfg")
 
+[file_customization]
+
+folder_colors={
+"res://game/": "yellow"
+}
+
 [input]
 
 melay_move_up={

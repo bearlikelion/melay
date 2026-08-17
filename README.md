@@ -61,8 +61,8 @@ player hosts, and everyone trusts them.
 
 ## Try it
 
-`demo/` is a complete Godot project with a menu, a lobby and a small arena. Start a relay, open
-it in Godot and press F5.
+`demo/` is a complete Godot project with a menu, a lobby and a small 3D arena. Start a relay,
+open it in Godot and press F5.
 
 <div align="center">
 <img src="docs/assets/countdown.png" width="560" alt="The demo's synchronised countdown">

@@ -289,7 +289,8 @@ func _start_game(start_at_relay_us: int) -> void:
 Open the `demo/` folder as a Godot project and press F5. For two players, use
 *Debug > Customize Run Instances > 2 instances*.
 
-Arrow keys or A and D slide your paddle side to side.
+Arrow keys or W and S slide your paddle up and down. The arena is a Jolt physics world seen
+straight on: the serve is slow, and every hit winds the rally up a little faster.
 
 ## Next
 

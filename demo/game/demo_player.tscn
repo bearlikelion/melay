@@ -2,20 +2,46 @@
 
 [ext_resource type="Script" uid="uid://by853mkic1ji0" path="res://game/demo_player.gd" id="1_player"]
 
-[node name="DemoPlayer" type="ColorRect" unique_id=321238473]
-custom_minimum_size = Vector2(104, 22)
-offset_right = 104.0
-offset_bottom = 22.0
-color = Color(0.357, 0.553, 0.933, 1)
+[sub_resource type="PhysicsMaterial" id="PaddlePhysics"]
+friction = 0.0
+bounce = 1.0
+
+[sub_resource type="BoxShape3D" id="PaddleShape"]
+size = Vector3(0.5, 2.2, 0.5)
+
+[sub_resource type="StandardMaterial3D" id="PaddleMaterial"]
+resource_local_to_scene = true
+albedo_color = Color(0.357, 0.553, 0.933, 1)
+metallic_specular = 0.2
+roughness = 0.6
+
+[sub_resource type="BoxMesh" id="PaddleMesh"]
+size = Vector3(0.5, 2.2, 0.5)
+
+[node name="DemoPlayer" type="RigidBody3D" unique_id=2103213248]
+axis_lock_linear_x = true
+axis_lock_linear_z = true
+axis_lock_angular_x = true
+axis_lock_angular_y = true
+axis_lock_angular_z = true
+mass = 1.5
+physics_material_override = SubResource("PaddlePhysics")
+gravity_scale = 0.0
+can_sleep = false
 script = ExtResource("1_player")
 
-[node name="NameLabel" type="Label" parent="." unique_id=1278062726]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1250667322]
+shape = SubResource("PaddleShape")
+
+[node name="Mesh" type="MeshInstance3D" parent="." unique_id=1256366943]
 unique_name_in_owner = true
-layout_mode = 1
-anchors_preset = 10
-anchor_right = 1.0
-offset_top = -26.0
-offset_bottom = -4.0
-grow_horizontal = 2
-horizontal_alignment = 1
-vertical_alignment = 1
+material_override = SubResource("PaddleMaterial")
+mesh = SubResource("PaddleMesh")
+
+[node name="NameLabel" type="Label3D" parent="." unique_id=1266859868]
+unique_name_in_owner = true
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.7, 0)
+no_depth_test = true
+outline_modulate = Color(0.063, 0.071, 0.086, 1)
+font_size = 64
+outline_size = 16

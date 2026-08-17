@@ -1,0 +1,42 @@
+[gd_scene format=3 uid="uid://c0melayball3d"]
+
+[ext_resource type="Script" path="res://game/demo_ball.gd" id="1_ball"]
+
+[sub_resource type="PhysicsMaterial" id="BallPhysics"]
+friction = 0.0
+bounce = 1.0
+
+[sub_resource type="BoxShape3D" id="BallShape"]
+size = Vector3(0.5, 0.5, 0.5)
+
+[sub_resource type="BoxMesh" id="BallMesh"]
+size = Vector3(0.5, 0.5, 0.5)
+
+[sub_resource type="StandardMaterial3D" id="BallMaterial"]
+albedo_color = Color(0.937, 0.855, 0.42, 1)
+roughness = 0.4
+emission_enabled = true
+emission = Color(0.937, 0.855, 0.42, 1)
+emission_energy_multiplier = 0.4
+
+[node name="DemoBall" type="RigidBody3D"]
+mass = 0.2
+physics_material_override = SubResource("BallPhysics")
+gravity_scale = 0.0
+continuous_cd = true
+contact_monitor = true
+max_contacts_reported = 6
+can_sleep = false
+axis_lock_linear_z = true
+axis_lock_angular_x = true
+axis_lock_angular_y = true
+axis_lock_angular_z = true
+freeze = true
+script = ExtResource("1_ball")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+shape = SubResource("BallShape")
+
+[node name="Mesh" type="MeshInstance3D" parent="."]
+mesh = SubResource("BallMesh")
+material_override = SubResource("BallMaterial")

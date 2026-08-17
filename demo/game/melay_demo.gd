@@ -214,7 +214,7 @@ func _on_leave_requested() -> void:
 	Melay.leave_room()
 
 
-func _on_ball_synced(to: Vector2, velocity: Vector2) -> void:
+func _on_ball_synced(to: Vector3, velocity: Vector3) -> void:
 	_sync_ball.rpc(to, velocity, Melay.get_relay_time_us())
 
 
@@ -255,7 +255,7 @@ func _seconds_until(relay_us: int) -> float:
 
 
 @rpc("authority", "unreliable_ordered", "call_remote")
-func _sync_ball(to: Vector2, velocity: Vector2, sent_at_relay_us: int) -> void:
+func _sync_ball(to: Vector3, velocity: Vector3, sent_at_relay_us: int) -> void:
 	if _screen == Screen.GAME and _current != null:
 		_current.apply_ball(to, velocity, _age_of(sent_at_relay_us))
 

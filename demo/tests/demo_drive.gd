@@ -140,7 +140,7 @@ func _run_guest() -> void:
 
 	# Position alone moves from local prediction, so count applied updates instead.
 	var updates_before: int = _screen().get_ball_update_count()
-	var position_before: Vector2 = _screen().get_ball_position()
+	var position_before: Vector3 = _screen().get_ball_position()
 	await get_tree().create_timer(0.8).timeout
 
 	_require(

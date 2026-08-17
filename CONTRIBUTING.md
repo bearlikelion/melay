@@ -64,7 +64,7 @@ It runs three stages:
 
 | Stage | What it covers |
 |---|---|
-| `arena physics` | Ball reflection off walls and rotated paddles, the speed cap, countdown gating, spawn placement. No relay needed. |
+| `arena physics` | The Jolt arena stepped for real: ball bounces off walls and paddles, the speed-up per hit and its cap, square returns, countdown gating, spawn placement. No relay needed. |
 | `peer` | Two headless Godot clients sharing a room and exchanging `@rpc` calls in both directions. |
 | `demo` | The demo driven through menu, lobby, ready-up, countdown, start and arena. |
 

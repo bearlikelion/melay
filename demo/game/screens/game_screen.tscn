@@ -1,17 +1,59 @@
 [gd_scene format=3 uid="uid://0xghl1dwje1b"]
 
 [ext_resource type="Script" uid="uid://dgy66oh3x51cb" path="res://game/screens/game_screen.gd" id="1_game"]
+[ext_resource type="PackedScene" uid="uid://c0melayball3d" path="res://game/demo_ball.tscn" id="2_ball"]
 
-[node name="GameScreen" type="Control" unique_id=640715313]
+[sub_resource type="Environment" id="Arena"]
+background_mode = 1
+background_color = Color(0.055, 0.063, 0.078, 1)
+ambient_light_source = 2
+ambient_light_color = Color(0.404, 0.451, 0.557, 1)
+ambient_light_energy = 0.85
+
+[sub_resource type="StandardMaterial3D" id="BackdropMaterial"]
+specular_mode = 2
+albedo_color = Color(0.114, 0.129, 0.157, 1)
+
+[sub_resource type="BoxMesh" id="BackdropMesh"]
+size = Vector3(30, 16, 0.5)
+
+[sub_resource type="StandardMaterial3D" id="CentreLineMaterial"]
+albedo_color = Color(0.176, 0.196, 0.243, 1)
+
+[sub_resource type="BoxMesh" id="CentreLineMesh"]
+size = Vector3(0.12, 9, 0.12)
+
+[sub_resource type="PhysicsMaterial" id="WallPhysics"]
+friction = 0.0
+bounce = 1.0
+
+[sub_resource type="BoxShape3D" id="CapShape"]
+size = Vector3(20, 0.5, 1)
+
+[sub_resource type="StandardMaterial3D" id="WallMaterial"]
+albedo_color = Color(0.216, 0.239, 0.294, 1)
+roughness = 0.75
+
+[sub_resource type="BoxMesh" id="CapMesh"]
+size = Vector3(20, 0.5, 1)
+
+[sub_resource type="BoxShape3D" id="SideShape"]
+size = Vector3(0.5, 10, 1)
+
+[sub_resource type="BoxMesh" id="SideMesh"]
+size = Vector3(0.5, 10, 1)
+
+[node name="GameScreen" type="Control" unique_id=532293460]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+physics_interpolation_mode = 2
 script = ExtResource("1_game")
 
-[node name="ArenaFrame" type="Panel" parent="." unique_id=205923070]
+[node name="ArenaViewport" type="SubViewportContainer" parent="." unique_id=884756787]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -22,30 +64,87 @@ offset_right = -16.0
 offset_bottom = -16.0
 grow_horizontal = 2
 grow_vertical = 2
-theme_type_variation = &"Arena"
+mouse_filter = 2
+stretch = true
 
-[node name="Playfield" type="Control" parent="." unique_id=41761544]
+[node name="SubViewport" type="SubViewport" parent="ArenaViewport" unique_id=796949041]
+own_world_3d = true
+handle_input_locally = false
+msaa_3d = 2
+size = Vector2i(1248, 636)
+render_target_update_mode = 4
+
+[node name="Arena" type="Node3D" parent="ArenaViewport/SubViewport" unique_id=2085926660]
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="ArenaViewport/SubViewport/Arena" unique_id=147725225]
+environment = SubResource("Arena")
+
+[node name="Camera3D" type="Camera3D" parent="ArenaViewport/SubViewport/Arena" unique_id=1844918550]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 16)
+projection = 1
+size = 10.6
+far = 60.0
+
+[node name="Sun" type="DirectionalLight3D" parent="ArenaViewport/SubViewport/Arena" unique_id=842217124]
+transform = Transform3D(0.906, 0, 0.422, 0.233, 0.833, -0.501, -0.352, 0.553, 0.755, 0, 6, 6)
+light_energy = 1.5
+
+[node name="Backdrop" type="MeshInstance3D" parent="ArenaViewport/SubViewport/Arena" unique_id=1301946101]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -2.5)
+material_override = SubResource("BackdropMaterial")
+mesh = SubResource("BackdropMesh")
+
+[node name="CentreLine" type="MeshInstance3D" parent="ArenaViewport/SubViewport/Arena" unique_id=1585427354]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.9)
+material_override = SubResource("CentreLineMaterial")
+mesh = SubResource("CentreLineMesh")
+
+[node name="Walls" type="StaticBody3D" parent="ArenaViewport/SubViewport/Arena" unique_id=1731893755]
+physics_material_override = SubResource("WallPhysics")
+
+[node name="TopShape" type="CollisionShape3D" parent="ArenaViewport/SubViewport/Arena/Walls" unique_id=756507412]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 4.75, 0)
+shape = SubResource("CapShape")
+
+[node name="TopMesh" type="MeshInstance3D" parent="ArenaViewport/SubViewport/Arena/Walls" unique_id=1466569991]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 4.75, 0)
+material_override = SubResource("WallMaterial")
+mesh = SubResource("CapMesh")
+
+[node name="BottomShape" type="CollisionShape3D" parent="ArenaViewport/SubViewport/Arena/Walls" unique_id=842661404]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -4.75, 0)
+shape = SubResource("CapShape")
+
+[node name="BottomMesh" type="MeshInstance3D" parent="ArenaViewport/SubViewport/Arena/Walls" unique_id=1175561103]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -4.75, 0)
+material_override = SubResource("WallMaterial")
+mesh = SubResource("CapMesh")
+
+[node name="LeftShape" type="CollisionShape3D" parent="ArenaViewport/SubViewport/Arena/Walls" unique_id=1595753673]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -9.75, 0, 0)
+shape = SubResource("SideShape")
+
+[node name="LeftMesh" type="MeshInstance3D" parent="ArenaViewport/SubViewport/Arena/Walls" unique_id=1305809025]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -9.75, 0, 0)
+material_override = SubResource("WallMaterial")
+mesh = SubResource("SideMesh")
+
+[node name="RightShape" type="CollisionShape3D" parent="ArenaViewport/SubViewport/Arena/Walls" unique_id=1718507865]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 9.75, 0, 0)
+shape = SubResource("SideShape")
+
+[node name="RightMesh" type="MeshInstance3D" parent="ArenaViewport/SubViewport/Arena/Walls" unique_id=1637078595]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 9.75, 0, 0)
+material_override = SubResource("WallMaterial")
+mesh = SubResource("SideMesh")
+
+[node name="Paddles" type="Node3D" parent="ArenaViewport/SubViewport/Arena" unique_id=559075767]
 unique_name_in_owner = true
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = 16.0
-offset_top = 68.0
-offset_right = -16.0
-offset_bottom = -16.0
-grow_horizontal = 2
-grow_vertical = 2
 
-[node name="Ball" type="ColorRect" parent="Playfield" unique_id=1519064210]
+[node name="Ball" parent="ArenaViewport/SubViewport/Arena" unique_id=610848691 instance=ExtResource("2_ball")]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(18, 18)
-layout_mode = 0
-offset_right = 18.0
-offset_bottom = 18.0
-color = Color(0.937, 0.855, 0.42, 1)
 
-[node name="CountdownLabel" type="Label" parent="." unique_id=1276360961]
+[node name="CountdownLabel" type="Label" parent="." unique_id=1552299288]
 unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 15
@@ -59,7 +158,7 @@ theme_type_variation = &"Countdown"
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="Hud" type="VBoxContainer" parent="." unique_id=1204009264]
+[node name="Hud" type="VBoxContainer" parent="." unique_id=1476753276]
 layout_mode = 1
 anchors_preset = 10
 anchor_right = 1.0
@@ -69,16 +168,16 @@ offset_right = -120.0
 offset_bottom = 60.0
 grow_horizontal = 2
 
-[node name="RoomLabel" type="Label" parent="Hud" unique_id=193104232]
+[node name="RoomLabel" type="Label" parent="Hud" unique_id=1681401678]
 unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"Heading"
 
-[node name="StatsLabel" type="Label" parent="Hud" unique_id=805107610]
+[node name="StatsLabel" type="Label" parent="Hud" unique_id=415001611]
 unique_name_in_owner = true
 layout_mode = 2
 
-[node name="LeaveButton" type="Button" parent="." unique_id=1547837521]
+[node name="LeaveButton" type="Button" parent="." unique_id=1809633163]
 unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 1

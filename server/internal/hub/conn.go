@@ -3,8 +3,10 @@ package hub
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/bearlikelion/melay/internal/proto"
@@ -25,6 +27,15 @@ const writeTimeout = 10 * time.Second
 type outFrame struct {
 	data []byte
 	mode proto.TransferMode
+}
+
+// endCause is why a connection ended. It is captured at the first cause rather than
+// the last, so the disconnect log names the trigger instead of its knock-on effects.
+type endCause struct {
+	reason string
+	code   proto.ErrorCode
+	status websocket.StatusCode
+	err    error
 }
 
 // Conn is one client connection: its identity, its room membership, and its
@@ -56,16 +67,82 @@ type Conn struct {
 	closed    bool
 	notify    chan struct{}
 	closeOnce sync.Once
+
+	framesIn   atomic.Uint64
+	framesOut  atomic.Uint64
+	bytesIn    atomic.Uint64
+	bytesOut   atomic.Uint64
+	lastReadNS atomic.Int64
+
+	endMu  sync.Mutex
+	endSet bool
+	end    endCause
 }
 
 func newConn(ws *websocket.Conn, h *Hub, log *slog.Logger) *Conn {
-	return &Conn{
+	c := &Conn{
 		ws:          ws,
 		hub:         h,
 		log:         log,
 		connectedAt: time.Now(),
 		notify:      make(chan struct{}, 1),
 	}
+	c.lastReadNS.Store(c.connectedAt.UnixNano())
+	return c
+}
+
+
+// noteEnd records why the connection ended, reporting whether this call was the one
+// that stuck. Later causes are consequences of the first and are dropped.
+func (c *Conn) noteEnd(cause endCause) bool {
+	c.endMu.Lock()
+	defer c.endMu.Unlock()
+	if c.endSet {
+		return false
+	}
+	c.endSet = true
+	c.end = cause
+	return true
+}
+
+
+// endedBecause reports the recorded cause, falling back to a plain close.
+func (c *Conn) endedBecause() endCause {
+	c.endMu.Lock()
+	defer c.endMu.Unlock()
+	if !c.endSet {
+		return endCause{reason: "connection closed"}
+	}
+	return c.end
+}
+
+
+// noteRead records one inbound frame and when it landed, so a disconnect log can say
+// whether the client went silent before it dropped.
+func (c *Conn) noteRead(n int) {
+	c.framesIn.Add(1)
+	c.bytesIn.Add(uint64(n))
+	c.lastReadNS.Store(time.Now().UnixNano())
+}
+
+
+// silentFor is how long the client has sent nothing.
+func (c *Conn) silentFor() time.Duration {
+	return time.Since(time.Unix(0, c.lastReadNS.Load()))
+}
+
+
+// readEndCause names why a read stopped. A close handshake carries a status code; an
+// abrupt drop carries none, which is what a crashed or network-severed client looks like.
+func readEndCause(err error) endCause {
+	switch {
+	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+		return endCause{reason: "server cancelled the connection", status: -1, err: err}
+	case websocket.CloseStatus(err) != -1:
+		return endCause{reason: "client closed the connection",
+			status: websocket.CloseStatus(err), err: err}
+	}
+	return endCause{reason: "connection dropped without a close frame", status: -1, err: err}
 }
 
 // SessionID implements room.Peer.
@@ -157,6 +234,8 @@ func (c *Conn) sendError(code proto.ErrorCode, msg string) {
 		c.closeWithError(code, msg)
 		return
 	}
+	c.log.Info("refused a frame", "session", c.sessionID, "game", c.game,
+		"code", string(code), "detail", msg)
 	c.sendJSON(proto.OpError, proto.Error{Code: code, Message: msg})
 }
 
@@ -171,6 +250,7 @@ func (c *Conn) closeWithError(code proto.ErrorCode, msg string) {
 // closeSoon marks the connection closed and wakes the writer so it can flush and exit.
 func (c *Conn) closeSoon(code proto.ErrorCode, msg string) {
 	c.closeOnce.Do(func() {
+		first := c.noteEnd(endCause{reason: msg, code: code, status: -1})
 		c.outMu.Lock()
 		c.closed = true
 		c.outMu.Unlock()
@@ -178,7 +258,10 @@ func (c *Conn) closeSoon(code proto.ErrorCode, msg string) {
 		case c.notify <- struct{}{}:
 		default:
 		}
-		c.log.Debug("closing connection", "session", c.sessionID, "code", string(code), "msg", msg)
+		if first {
+			c.log.Info("closing connection", "session", c.sessionID, "game", c.game,
+				"code", string(code), "detail", msg)
+		}
 	})
 }
 
@@ -196,9 +279,13 @@ func (c *Conn) writeLoop(ctx context.Context) {
 			err := c.ws.Write(wctx, websocket.MessageBinary, f.data)
 			cancel()
 			if err != nil {
+				c.noteEnd(endCause{reason: "write failed",
+					code: proto.ErrInternal, status: websocket.CloseStatus(err), err: err})
 				c.closeSoon(proto.ErrInternal, "write failed")
 				return
 			}
+			c.framesOut.Add(1)
+			c.bytesOut.Add(uint64(len(f.data)))
 		}
 
 		if closed {

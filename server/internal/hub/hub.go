@@ -72,7 +72,7 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		CompressionMode:    websocket.CompressionDisabled,
 	})
 	if err != nil {
-		h.log.Debug("websocket accept failed", "err", err)
+		h.log.Warn("websocket accept failed", "remote", r.RemoteAddr, "err", err)
 		return
 	}
 	ws.SetReadLimit(handshakeReadLimit)
@@ -113,6 +113,10 @@ func (h *Hub) addConn(c *Conn) {
 }
 
 func (h *Hub) removeConn(c *Conn) {
+	roomCode := ""
+	if r, _ := c.currentRoom(); r != nil {
+		roomCode = r.Code
+	}
 	h.leaveRoom(c, proto.ReasonDisconnected)
 
 	h.mu.Lock()
@@ -138,10 +142,34 @@ func (h *Hub) removeConn(c *Conn) {
 		Platform:    c.platform,
 		DurationMS:  time.Since(c.connectedAt).Milliseconds(),
 	})
-	if n := c.droppedCount(); n > 0 {
-		h.log.Info("connection dropped frames under backpressure",
-			"session", c.sessionID, "game", c.game, "dropped", n)
+	cause := c.endedBecause()
+	fields := []any{
+		"session", c.sessionID,
+		"game", c.game,
+		"version", c.gameVersion,
+		"platform", c.platform,
+		"reason", cause.reason,
+		"duration_s", int64(time.Since(c.connectedAt).Seconds()),
+		"silent_s", int64(c.silentFor().Seconds()),
+		"frames_in", c.framesIn.Load(),
+		"frames_out", c.framesOut.Load(),
+		"bytes_in", c.bytesIn.Load(),
+		"bytes_out", c.bytesOut.Load(),
+		"dropped", c.droppedCount(),
 	}
+	if roomCode != "" {
+		fields = append(fields, "code", roomCode)
+	}
+	if cause.code != "" {
+		fields = append(fields, "error_code", string(cause.code))
+	}
+	if cause.status != -1 && cause.status != 0 {
+		fields = append(fields, "ws_status", int(cause.status))
+	}
+	if cause.err != nil {
+		fields = append(fields, "err", cause.err.Error())
+	}
+	h.log.Info("session ended", fields...)
 }
 
 // readLoop consumes frames until the socket closes or a fatal error occurs.
@@ -149,8 +177,10 @@ func (c *Conn) readLoop(ctx context.Context) {
 	for {
 		kind, data, err := c.ws.Read(ctx)
 		if err != nil {
+			c.noteEnd(readEndCause(err))
 			return
 		}
+		c.noteRead(len(data))
 		if kind != websocket.MessageBinary {
 			c.sendError(proto.ErrBadFrame, "text frames are not part of the protocol")
 			return
@@ -392,6 +422,9 @@ func (h *Hub) enterRoom(c *Conn, r *room.Room) {
 	}
 	c.sendJSON(proto.OpRoomState, r.State(peerID))
 
+	h.log.Info("peer joined", "code", r.Code, "game", c.game, "peer", peerID,
+		"host", peerID == r.HostID(), "players", r.PlayerCount(), "session", c.sessionID)
+
 	h.store.Record(store.Event{
 		At:          time.Now(),
 		Kind:        store.EventPeerJoined,
@@ -425,6 +458,10 @@ func (h *Hub) leaveRoom(c *Conn, reason string) {
 		r.Broadcast(proto.EncodeJSON(proto.OpPeerLeave, frame), peerID)
 	}
 
+	h.log.Info("peer left", "code", r.Code, "game", c.game, "peer", peerID,
+		"was_host", peerID == room.HostPeerID, "reason", reason,
+		"remaining", r.PlayerCount(), "session", c.sessionID)
+
 	h.store.Record(store.Event{
 		At:          time.Now(),
 		Kind:        store.EventPeerLeft,
@@ -446,7 +483,8 @@ func (h *Hub) leaveRoom(c *Conn, reason string) {
 			RoomID:      r.ID,
 			DurationMS:  time.Since(r.CreatedAt).Milliseconds(),
 		})
-		h.log.Info("room closed", "code", r.Code, "game", r.Game)
+		h.log.Info("room closed", "code", r.Code, "game", r.Game,
+			"lifetime_s", int64(time.Since(r.CreatedAt).Seconds()))
 	}
 }
 

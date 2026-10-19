@@ -252,7 +252,7 @@ func _on_client_connected() -> void:
 
 func _on_client_disconnected(reason: String) -> void:
 	if auto_assign_peer and multiplayer.multiplayer_peer == _client.peer:
-		multiplayer.multiplayer_peer = null
+		multiplayer.multiplayer_peer = OfflineMultiplayerPeer.new()
 	disconnected.emit(reason)
 
 
@@ -268,5 +268,5 @@ func _on_client_room_joined(room: MelayRoom) -> void:
 
 func _on_client_room_left() -> void:
 	if auto_assign_peer and multiplayer.multiplayer_peer == _client.peer:
-		multiplayer.multiplayer_peer = null
+		multiplayer.multiplayer_peer = OfflineMultiplayerPeer.new()
 	room_left.emit()

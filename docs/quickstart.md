@@ -140,7 +140,7 @@ The order matters:
 |---|---|
 | `connect_to_relay()` | Opens the socket. `multiplayer.multiplayer_peer` is still untouched. |
 | `create_room()` or `join_room()` | The relay hands you a peer id, Melay builds a `MelayPeer`, and **assigns it**. |
-| `leave_room()` or losing the connection | Melay sets it back to `null`. |
+| `leave_room()` or losing the connection | Melay puts back an `OfflineMultiplayerPeer`, so `get_unique_id()` returns `1` again. |
 
 So the peer is set when you enter a room, not when you connect. The host gets peer id `1`, so
 `multiplayer.is_server()` behaves the way you expect.

@@ -7,9 +7,10 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
+ARG VERSION=dev
 # CGO stays off so the pure-Go sqlite driver yields a fully static binary.
 # No BuildKit cache mounts here, so this builds anywhere including Cloud Build.
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/melay ./cmd/melay
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o /out/melay ./cmd/melay
 
 # Staged so the scratch image gets a writable data directory owned by the runtime user.
 FROM alpine:3.21 AS layout

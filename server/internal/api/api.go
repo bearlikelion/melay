@@ -20,18 +20,19 @@ const defaultRange = 7 * 24 * time.Hour
 
 // Server wires the read-only views over the live hub and the analytics store.
 type Server struct {
-	hub    *hub.Hub
-	rooms  *room.Manager
-	store  store.Store
-	log    *slog.Logger
-	start  time.Time
-	webDir string
+	hub     *hub.Hub
+	rooms   *room.Manager
+	store   store.Store
+	log     *slog.Logger
+	start   time.Time
+	webDir  string
+	version string
 }
 
 // New builds the API handler set. webDir may be empty; when it points at a Godot web
 // export, the game is served at /play on the same origin as the relay.
-func New(h *hub.Hub, rooms *room.Manager, st store.Store, log *slog.Logger, webDir string) *Server {
-	return &Server{hub: h, rooms: rooms, store: st, log: log, start: time.Now(), webDir: webDir}
+func New(h *hub.Hub, rooms *room.Manager, st store.Store, log *slog.Logger, webDir, version string) *Server {
+	return &Server{hub: h, rooms: rooms, store: st, log: log, start: time.Now(), webDir: webDir, version: version}
 }
 
 // Routes registers every HTTP route the server exposes, including the WebSocket
@@ -71,6 +72,7 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status":     "ok",
+		"version":    s.version,
 		"uptime_sec": int(time.Since(s.start).Seconds()),
 		"rooms":      s.rooms.TotalRooms(),
 		"web":        hasWebExport(s.webDir),
@@ -190,6 +192,7 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
+		"version":        s.version,
 		"range":          r.URL.Query().Get("range"),
 		"generated_at":   time.Now().Unix(),
 		"players_online": totalPlayers,

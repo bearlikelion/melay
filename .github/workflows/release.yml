@@ -92,6 +92,7 @@ jobs:
           context: server
           platforms: linux/amd64,linux/arm64
           push: true
+          build-args: VERSION=${{ env.VERSION }}
           tags: |
             ghcr.io/${{ github.repository }}:${{ env.VERSION }}
             ghcr.io/${{ github.repository }}:latest

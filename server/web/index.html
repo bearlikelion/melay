@@ -115,7 +115,7 @@ select {
 </head>
 <body>
 <header>
-	<h1>Melay <span>relay analytics</span></h1>
+	<h1>Melay <span>relay analytics</span><span id="version"></span></h1>
 	<div class="controls">
 		<span class="live"><span class="dot"></span><span id="updated">connecting</span></span>
 		<select id="range">
@@ -197,6 +197,7 @@ async function refresh() {
 	try {
 		const res = await fetch("/api/v1/stats?range=" + encodeURIComponent($("range").value));
 		const data = await res.json();
+		$("version").textContent = data.version || "";
 		$("t-players").textContent = data.players_online ?? 0;
 		$("t-rooms").textContent = data.rooms_active ?? 0;
 		$("t-games").textContent = (data.games || []).length;

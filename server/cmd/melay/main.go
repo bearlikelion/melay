@@ -22,6 +22,9 @@ import (
 	"github.com/bearlikelion/melay/internal/store"
 )
 
+// version is set at build time with -ldflags "-X main.version=v1.2.3".
+var version = "dev"
+
 // shutdownGrace bounds how long in-flight requests get to finish on SIGTERM.
 const shutdownGrace = 10 * time.Second
 
@@ -54,7 +57,7 @@ func main() {
 	h := hub.New(cfg, rooms, st, log)
 
 	mux := http.NewServeMux()
-	api.New(h, rooms, st, log, cfg.WebDir).Routes(mux)
+	api.New(h, rooms, st, log, cfg.WebDir, version).Routes(mux)
 
 	srv := &http.Server{
 		Addr:              cfg.Addr,
@@ -68,6 +71,7 @@ func main() {
 
 	go func() {
 		log.Info("melay listening",
+			"version", version,
 			"addr", cfg.Addr,
 			"protocol", proto.Version,
 			"games", len(cfg.Games),

@@ -75,7 +75,8 @@ server replies with `WELCOME`, or `ERROR` followed by close.
   "display_name": "Mark",
   "platform": "linux",
   "auth": "optional-per-game-key",
-  "resume": "optional-session-id"
+  "resume": "optional-session-id",
+  "received": 0
 }
 ```
 
@@ -85,6 +86,13 @@ per-install identifier, not a device id and not PII.
 `resume` carries a previous `session_id` to reclaim a seat held open after a drop. The server
 may honour it or issue a fresh session, so the client must always read the returned
 `session_id` rather than assume its own.
+
+A seat is held for 30 seconds when a room member's link drops without a close frame, or closes with status `4000`.
+Peers see nothing while it is held; it is announced as a `PEER_LEAVE` only if the window runs out.
+Both sides count their reliable frames: `RELAY` and `RELAY_OUT` sent reliably, every fragment, and `PEER_JOIN` and `PEER_LEAVE`.
+`received` in `HELLO` is how many of those the client got, and `received` in a resumed `WELCOME` is how many the relay got.
+Each side then resends everything after the other's count, so nothing reliable is lost or doubled.
+A count outside what the other side still holds cannot be resumed, and the relay answers with a fresh session.
 
 ```json
 {

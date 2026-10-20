@@ -30,6 +30,9 @@ signal peer_joined(info: MelayPeerInfo)
 signal peer_left(info: MelayPeerInfo, reason: String)
 signal error_received(code: String, message: String)
 signal latency_updated(rtt_us: int, clock_offset_us: int)
+## The link dropped mid-room; Melay retries for 30 seconds before [signal disconnected].
+signal reconnecting
+signal reconnected
 
 const SETTING_MODE: String = "melay/connection/mode"
 const SETTING_URL: String = "melay/connection/url"
@@ -67,6 +70,13 @@ func _ready() -> void:
 	_client.peer_left.connect(peer_left.emit)
 	_client.error_received.connect(error_received.emit)
 	_client.latency_updated.connect(latency_updated.emit)
+	_client.reconnecting.connect(reconnecting.emit)
+	_client.reconnected.connect(reconnected.emit)
+
+
+# Autoloads exit after the game has saved; a clean close stops the relay holding the seat.
+func _exit_tree() -> void:
+	_client.close_on_exit()
 
 
 ## Points the addon at a relay. Overrides whatever the project settings say.
@@ -169,7 +179,8 @@ func get_max_message_size() -> int:
 
 
 func is_in_room() -> bool:
-	return _client.get_status() == MelayClient.Status.IN_ROOM
+	var status: MelayClient.Status = _client.get_status()
+	return status == MelayClient.Status.IN_ROOM or status == MelayClient.Status.RESUMING
 
 
 func is_host() -> bool:

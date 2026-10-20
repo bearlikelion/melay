@@ -41,6 +41,8 @@ type Hello struct {
 	Platform    string `json:"platform"`
 	Auth        string `json:"auth,omitempty"`
 	Resume      string `json:"resume,omitempty"`
+	// Received counts the reliable frames the client got before it dropped.
+	Received uint64 `json:"received,omitempty"`
 }
 
 // Limits are the server-side caps a client must respect.
@@ -61,7 +63,9 @@ type Welcome struct {
 	SessionID    string `json:"session_id"`
 	ServerTimeUS int64  `json:"server_time_us"`
 	Resumed      bool   `json:"resumed"`
-	Limits       Limits `json:"limits"`
+	// Received counts the client's reliable frames the relay got, so it replays the rest.
+	Received uint64 `json:"received,omitempty"`
+	Limits   Limits `json:"limits"`
 }
 
 // RoomCreate requests a new room.

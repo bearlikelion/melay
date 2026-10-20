@@ -36,10 +36,14 @@ type Hub struct {
 	store store.Store
 	log   *slog.Logger
 
-	mu      sync.RWMutex
-	conns   map[*Conn]struct{}
-	peakCCU map[string]int
-	liveCCU map[string]int
+	// ResumeWindow is how long a dropped client's seat is held. Zero disables resume.
+	ResumeWindow time.Duration
+
+	mu       sync.RWMutex
+	conns    map[*Conn]struct{}
+	sessions map[string]*session
+	peakCCU  map[string]int
+	liveCCU  map[string]int
 }
 
 // New builds a hub over an existing room manager and analytics store.
@@ -52,6 +56,9 @@ func New(cfg *config.Config, rooms *room.Manager, st store.Store, log *slog.Logg
 		conns:   map[*Conn]struct{}{},
 		peakCCU: map[string]int{},
 		liveCCU: map[string]int{},
+
+		ResumeWindow: DefaultResumeWindow,
+		sessions:     map[string]*session{},
 	}
 }
 
@@ -113,12 +120,6 @@ func (h *Hub) addConn(c *Conn) {
 }
 
 func (h *Hub) removeConn(c *Conn) {
-	roomCode := ""
-	if r, _ := c.currentRoom(); r != nil {
-		roomCode = r.Code
-	}
-	h.leaveRoom(c, proto.ReasonDisconnected)
-
 	h.mu.Lock()
 	delete(h.conns, c)
 	if c.game != "" {
@@ -132,17 +133,25 @@ func (h *Hub) removeConn(c *Conn) {
 	if c.sessionID == "" {
 		return
 	}
-	h.store.Record(store.Event{
-		At:          time.Now(),
-		Kind:        store.EventSessionEnded,
-		Game:        c.game,
-		GameVersion: c.gameVersion,
-		SessionID:   c.sessionID,
-		ClientID:    c.clientID,
-		Platform:    c.platform,
-		DurationMS:  time.Since(c.connectedAt).Milliseconds(),
-	})
+
+	s := c.session
+	roomCode := ""
+	r, _ := s.currentRoom()
+	if r != nil {
+		roomCode = r.Code
+	}
 	cause := c.endedBecause()
+	msg := "connection replaced"
+	if s.detach(c) {
+		msg = "session ended"
+		if cause.resumable && r != nil && h.ResumeWindow > 0 {
+			msg = "session held"
+			s.holdFor(h.ResumeWindow, func() { h.expire(s) })
+		} else {
+			h.endSession(s)
+		}
+	}
+
 	fields := []any{
 		"session", c.sessionID,
 		"game", c.game,
@@ -169,7 +178,56 @@ func (h *Hub) removeConn(c *Conn) {
 	if cause.err != nil {
 		fields = append(fields, "err", cause.err.Error())
 	}
-	h.log.Info("session ended", fields...)
+	h.log.Info(msg, fields...)
+}
+
+// endSession closes a session that has no connection, giving up its seat.
+func (h *Hub) endSession(s *session) bool {
+	if !s.end() {
+		return false
+	}
+	h.mu.Lock()
+	delete(h.sessions, s.sessionID)
+	h.mu.Unlock()
+
+	h.leaveRoom(s, proto.ReasonDisconnected)
+	h.store.Record(store.Event{
+		At:          time.Now(),
+		Kind:        store.EventSessionEnded,
+		Game:        s.game,
+		GameVersion: s.gameVersion,
+		SessionID:   s.sessionID,
+		ClientID:    s.clientID,
+		Platform:    s.platform,
+		DurationMS:  time.Since(s.startedAt).Milliseconds(),
+	})
+	return true
+}
+
+func (h *Hub) expire(s *session) {
+	if h.endSession(s) {
+		h.log.Info("session expired", "session", s.sessionID, "game", s.game)
+	}
+}
+
+func (h *Hub) lookupSession(id string) *session {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.sessions[id]
+}
+
+// admit finishes a handshake, whether the session is fresh or resumed.
+func (h *Hub) admit(c *Conn) {
+	c.helloDone = true
+	c.ws.SetReadLimit(int64(c.limits.MaxPacketSize + frameOverhead))
+
+	h.mu.Lock()
+	h.sessions[c.sessionID] = c.session
+	h.liveCCU[c.game]++
+	if h.liveCCU[c.game] > h.peakCCU[c.game] {
+		h.peakCCU[c.game] = h.liveCCU[c.game]
+	}
+	h.mu.Unlock()
 }
 
 // readLoop consumes frames until the socket closes or a fatal error occurs.
@@ -261,6 +319,35 @@ func (h *Hub) handleHello(c *Conn, payload []byte) bool {
 		return false
 	}
 
+	c.limits = proto.Limits{
+		MaxPacketSize:     resolved.MaxPacketSize,
+		MaxMessageSize:    resolved.MaxMessageSize,
+		MaxPlayersPerRoom: resolved.MaxPlayersPerRoom,
+		MaxRooms:          resolved.MaxRooms,
+		MaxNameLength:     config.DefaultMaxNameLength,
+	}
+
+	if s := h.lookupSession(hello.Resume); s != nil && s.clientID == hello.ClientID &&
+		s.game == hello.Game && s.gameVersion == hello.GameVersion {
+		old, ok := s.resume(c, hello.Received, proto.Welcome{
+			Protocol:     proto.Version,
+			SessionID:    s.sessionID,
+			ServerTimeUS: time.Now().UnixMicro(),
+			Limits:       c.limits,
+		})
+		if ok {
+			c.session = s
+			if old != nil {
+				old.closeSoon(proto.ErrInternal, "replaced by a resumed connection")
+			}
+			h.admit(c)
+			h.log.Info("session resumed", "session", s.sessionID, "game", s.game,
+				"received", hello.Received)
+			return true
+		}
+		h.endSession(s)
+	}
+
 	sessionID, err := newSessionID()
 	if err != nil {
 		c.sendError(proto.ErrInternal, "could not allocate a session")
@@ -273,22 +360,9 @@ func (h *Hub) handleHello(c *Conn, payload []byte) bool {
 	c.gameVersion = hello.GameVersion
 	c.platform = sanitize(hello.Platform, config.DefaultMaxNameLength)
 	c.displayName = sanitize(hello.DisplayName, config.DefaultMaxNameLength)
-	c.limits = proto.Limits{
-		MaxPacketSize:     resolved.MaxPacketSize,
-		MaxMessageSize:    resolved.MaxMessageSize,
-		MaxPlayersPerRoom: resolved.MaxPlayersPerRoom,
-		MaxRooms:          resolved.MaxRooms,
-		MaxNameLength:     config.DefaultMaxNameLength,
-	}
-	c.helloDone = true
-	c.ws.SetReadLimit(int64(resolved.MaxPacketSize + frameOverhead))
-
-	h.mu.Lock()
-	h.liveCCU[c.game]++
-	if h.liveCCU[c.game] > h.peakCCU[c.game] {
-		h.peakCCU[c.game] = h.liveCCU[c.game]
-	}
-	h.mu.Unlock()
+	c.startedAt = c.connectedAt
+	c.attach(c)
+	h.admit(c)
 
 	c.sendJSON(proto.OpWelcome, proto.Welcome{
 		Protocol:     proto.Version,
@@ -402,7 +476,7 @@ func (h *Hub) handleRoomJoin(c *Conn, payload []byte) {
 
 // enterRoom adds the connection to a room and notifies both sides.
 func (h *Hub) enterRoom(c *Conn, r *room.Room) {
-	peerID, err := r.Join(c)
+	peerID, err := r.Join(c.session)
 	if err != nil {
 		switch {
 		case errors.Is(err, room.ErrRoomFull):
@@ -442,11 +516,11 @@ func (h *Hub) handleRoomLeave(c *Conn) {
 		c.sendError(proto.ErrNotInRoom, "not in a room")
 		return
 	}
-	h.leaveRoom(c, proto.ReasonLeft)
+	h.leaveRoom(c.session, proto.ReasonLeft)
 }
 
-// leaveRoom removes the connection from its room and tears the room down when empty.
-func (h *Hub) leaveRoom(c *Conn, reason string) {
+// leaveRoom removes the session from its room and tears the room down when empty.
+func (h *Hub) leaveRoom(c *session, reason string) {
 	r, peerID := c.currentRoom()
 	if r == nil {
 		return
@@ -513,6 +587,9 @@ func (h *Hub) handleRelay(c *Conn, payload []byte) {
 		c.sendError(proto.ErrBadFrame, "malformed RELAY header")
 		return
 	}
+	if header.Mode == proto.Reliable && !c.noteRecv(c) {
+		return
+	}
 	if len(packet) > c.limits.MaxPacketSize {
 		c.sendError(proto.ErrPacketTooLarge,
 			fmt.Sprintf("packet of %d bytes exceeds the %d byte limit", len(packet), c.limits.MaxPacketSize))
@@ -536,6 +613,9 @@ func (h *Hub) handleRelayFragment(c *Conn, payload []byte) {
 	header, slice, err := proto.DecodeRelayFragment(payload)
 	if err != nil {
 		c.sendError(proto.ErrBadFrame, "malformed RELAY_FRAGMENT header")
+		return
+	}
+	if !c.noteRecv(c) {
 		return
 	}
 	if header.Count < 2 || header.Index >= header.Count {

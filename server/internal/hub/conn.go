@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/bearlikelion/melay/internal/proto"
-	"github.com/bearlikelion/melay/internal/room"
 	"github.com/coder/websocket"
 )
 
@@ -20,6 +19,9 @@ const (
 	softLimit = 256
 	hardLimit = 1024
 )
+
+// StatusResuming is the close code a client sends when it drops a link to reconnect.
+const StatusResuming websocket.StatusCode = 4000
 
 // writeTimeout bounds a single frame write, so one wedged socket cannot pin a goroutine.
 const writeTimeout = 10 * time.Second
@@ -36,30 +38,24 @@ type endCause struct {
 	code   proto.ErrorCode
 	status websocket.StatusCode
 	err    error
+	// resumable marks a drop the client may come back from, so its seat is held.
+	resumable bool
 }
 
-// Conn is one client connection: its identity, its room membership, and its
-// bounded outbound queue.
+// Conn is one client connection and its bounded outbound queue. Identity and room
+// membership live on the session, which a resumed connection takes over.
 type Conn struct {
+	*session
+
 	ws  *websocket.Conn
 	hub *Hub
 	log *slog.Logger
 
-	sessionID   string
-	clientID    string
-	game        string
-	gameVersion string
-	displayName string
-	platform    string
 	limits      proto.Limits
 	connectedAt time.Time
 
 	// helloDone gates every opcode other than HELLO.
 	helloDone bool
-
-	stateMu sync.RWMutex
-	room    *room.Room
-	peerID  int32
 
 	outMu     sync.Mutex
 	outQ      []outFrame
@@ -81,6 +77,7 @@ type Conn struct {
 
 func newConn(ws *websocket.Conn, h *Hub, log *slog.Logger) *Conn {
 	c := &Conn{
+		session:     &session{},
 		ws:          ws,
 		hub:         h,
 		log:         log,
@@ -133,21 +130,16 @@ func readEndCause(err error) endCause {
 	switch {
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
 		return endCause{reason: "server cancelled the connection", status: -1, err: err}
+	case websocket.CloseStatus(err) == StatusResuming:
+		return endCause{reason: "client is reconnecting", status: StatusResuming, err: err,
+			resumable: true}
 	case websocket.CloseStatus(err) != -1:
 		return endCause{reason: "client closed the connection",
 			status: websocket.CloseStatus(err), err: err}
 	}
-	return endCause{reason: "connection dropped without a close frame", status: -1, err: err}
+	return endCause{reason: "connection dropped without a close frame", status: -1, err: err,
+		resumable: true}
 }
-
-// SessionID implements room.Peer.
-func (c *Conn) SessionID() string { return c.sessionID }
-
-// DisplayName implements room.Peer.
-func (c *Conn) DisplayName() string { return c.displayName }
-
-// Platform implements room.Peer.
-func (c *Conn) Platform() string { return c.platform }
 
 // Send queues a frame and never blocks. When the queue is over softLimit it sheds
 // the oldest unreliable traffic first, so a slow client degrades to stale updates
@@ -206,8 +198,8 @@ func (c *Conn) sendJSON(op proto.Op, v any) {
 	c.Send(proto.EncodeJSON(op, payload), proto.Reliable)
 }
 
-// enqueue appends without consulting the queue bounds. Only terminal error frames
-// use it, so that reporting an overflow cannot itself overflow the queue.
+// enqueue appends without consulting the queue bounds. Only terminal error frames and
+// resume replays use it, so neither can trip the overflow they would report.
 func (c *Conn) enqueue(frame []byte) {
 	c.outMu.Lock()
 	if c.closed {
@@ -274,8 +266,8 @@ func (c *Conn) writeLoop(ctx context.Context) {
 			err := c.ws.Write(wctx, websocket.MessageBinary, f.data)
 			cancel()
 			if err != nil {
-				c.noteEnd(endCause{reason: "write failed",
-					code: proto.ErrInternal, status: websocket.CloseStatus(err), err: err})
+				c.noteEnd(endCause{reason: "write failed", code: proto.ErrInternal,
+					status: websocket.CloseStatus(err), err: err, resumable: true})
 				c.closeSoon(proto.ErrInternal, "write failed")
 				return
 			}
@@ -293,20 +285,6 @@ func (c *Conn) writeLoop(ctx context.Context) {
 		case <-c.notify:
 		}
 	}
-}
-
-// currentRoom returns the room this connection is in, if any.
-func (c *Conn) currentRoom() (*room.Room, int32) {
-	c.stateMu.RLock()
-	defer c.stateMu.RUnlock()
-	return c.room, c.peerID
-}
-
-func (c *Conn) setRoom(r *room.Room, peerID int32) {
-	c.stateMu.Lock()
-	c.room = r
-	c.peerID = peerID
-	c.stateMu.Unlock()
 }
 
 // droppedCount is the number of shed frames, for logging on disconnect.

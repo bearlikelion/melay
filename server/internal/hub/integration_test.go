@@ -28,10 +28,16 @@ type client struct {
 
 func newServer(t *testing.T, cfg *config.Config) *httptest.Server {
 	t.Helper()
+	return newResumeServer(t, cfg, hub.DefaultResumeWindow)
+}
+
+func newResumeServer(t *testing.T, cfg *config.Config, window time.Duration) *httptest.Server {
+	t.Helper()
 
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	rooms := room.NewManager()
 	h := hub.New(cfg, rooms, store.Nop{}, log)
+	h.ResumeWindow = window
 
 	mux := http.NewServeMux()
 	mux.Handle("/ws", h)
@@ -116,6 +122,11 @@ func (c *client) expect(op proto.Op) proto.Frame {
 
 func (c *client) hello(game, version, id string) proto.Welcome {
 	c.t.Helper()
+	return c.resume(game, version, id, "", 0)
+}
+
+func (c *client) resume(game, version, id, session string, received uint64) proto.Welcome {
+	c.t.Helper()
 
 	c.sendJSON(proto.OpHello, proto.Hello{
 		Protocol:    proto.Version,
@@ -124,6 +135,8 @@ func (c *client) hello(game, version, id string) proto.Welcome {
 		ClientID:    id,
 		DisplayName: id,
 		Platform:    "test",
+		Resume:      session,
+		Received:    received,
 	})
 	var w proto.Welcome
 	if err := json.Unmarshal(c.expect(proto.OpWelcome).Payload, &w); err != nil {
@@ -512,7 +525,7 @@ func TestJoinByLowercaseCode(t *testing.T) {
 }
 
 func TestDisconnectNotifiesRoom(t *testing.T) {
-	srv := newServer(t, config.New())
+	srv := newResumeServer(t, config.New(), 50*time.Millisecond)
 
 	host := dial(t, srv)
 	host.hello("g", "1", "host")
@@ -673,5 +686,78 @@ func TestWelcomeAdvertisesTheMessageCeiling(t *testing.T) {
 	if welcome.Limits.MaxMessageSize < welcome.Limits.MaxPacketSize {
 		t.Fatalf("max_message_size = %d, want at least max_packet_size %d",
 			welcome.Limits.MaxMessageSize, welcome.Limits.MaxPacketSize)
+	}
+}
+
+func TestResumeReplaysWhatTheDropMissed(t *testing.T) {
+	srv := newServer(t, config.New())
+
+	host := dial(t, srv)
+	w := host.hello("g", "1", "host")
+	host.sendJSON(proto.OpRoomCreate, proto.RoomCreate{MaxPlayers: 4})
+	code := host.roomState().Code
+
+	guest := dial(t, srv)
+	guest.hello("g", "1", "guest")
+	guest.sendJSON(proto.OpRoomJoin, proto.RoomJoin{Code: code})
+	guest.roomState()
+	host.expect(proto.OpPeerJoin)
+
+	guest.send(proto.OpRelay, relayPayload(1, 0, proto.Reliable, []byte("a")))
+	host.expect(proto.OpRelayOut)
+	host.ws.CloseNow()
+	time.Sleep(50 * time.Millisecond)
+
+	guest.send(proto.OpRelay, relayPayload(1, 0, proto.Unreliable, []byte("u")))
+	guest.send(proto.OpRelay, relayPayload(1, 0, proto.Reliable, []byte("b")))
+	time.Sleep(50 * time.Millisecond)
+
+	back := dial(t, srv)
+	rw := back.resume("g", "1", "host", w.SessionID, 2)
+	if !rw.Resumed || rw.SessionID != w.SessionID || rw.Received != 0 {
+		t.Fatalf("welcome = %+v, want resumed %s with nothing received", rw, w.SessionID)
+	}
+	_, packet, err := proto.DecodeRelay(back.expect(proto.OpRelayOut).Payload)
+	if err != nil || string(packet) != "b" {
+		t.Fatalf("replayed %q (%v), want the reliable packet sent while away", packet, err)
+	}
+
+	back.send(proto.OpRelay, relayPayload(2, 0, proto.Reliable, []byte("c")))
+	f := guest.read()
+	if f.Op != proto.OpRelayOut {
+		t.Fatalf("guest saw %s, want the resumed host's packet and no PEER_LEAVE", f.Op)
+	}
+}
+
+func TestResumeFromBeyondTheHistoryStartsFresh(t *testing.T) {
+	srv := newServer(t, config.New())
+
+	first := dial(t, srv)
+	w := first.hello("g", "1", "solo")
+	first.sendJSON(proto.OpRoomCreate, proto.RoomCreate{MaxPlayers: 4})
+	first.roomState()
+	first.ws.CloseNow()
+	time.Sleep(50 * time.Millisecond)
+
+	back := dial(t, srv)
+	rw := back.resume("g", "1", "solo", w.SessionID, 99)
+	if rw.Resumed || rw.SessionID == w.SessionID {
+		t.Fatalf("welcome = %+v, want a fresh session", rw)
+	}
+}
+
+func TestResumeNeedsTheSameClient(t *testing.T) {
+	srv := newServer(t, config.New())
+
+	first := dial(t, srv)
+	w := first.hello("g", "1", "owner")
+	first.sendJSON(proto.OpRoomCreate, proto.RoomCreate{MaxPlayers: 4})
+	first.roomState()
+	first.ws.CloseNow()
+	time.Sleep(50 * time.Millisecond)
+
+	thief := dial(t, srv)
+	if rw := thief.resume("g", "1", "thief", w.SessionID, 0); rw.Resumed {
+		t.Fatalf("another client resumed the seat: %+v", rw)
 	}
 }

@@ -20,6 +20,9 @@ signal peer_left(info: MelayPeerInfo, reason: String)
 signal room_list_received(rooms: Array[Dictionary])
 signal error_received(code: String, message: String)
 signal latency_updated(rtt_us: int, clock_offset_us: int)
+## The link dropped mid-room; Godot still sees the peer as connected meanwhile.
+signal reconnecting
+signal reconnected
 
 enum Status {
 	DISCONNECTED,
@@ -27,6 +30,7 @@ enum Status {
 	CONNECTED,
 	JOINING,
 	IN_ROOM,
+	RESUMING,
 }
 
 const CLIENT_ID_PATH: String = "user://melay_client_id"
@@ -47,6 +51,12 @@ const MAX_QUEUED_PACKETS: int = 2048
 
 ## Message ids are u16, so they wrap rather than grow.
 const MESSAGE_ID_LIMIT: int = 1 << 16
+
+## Matches how long the relay holds a dropped seat.
+const RESUME_WINDOW: float = 30.0
+const RESUME_RETRY_INTERVAL: float = 3.0
+const RESUME_HISTORY_LIMIT: int = 8 << 20
+const CLOSE_RESUMING: int = 4000
 
 var peer: MelayPeer = null
 
@@ -82,6 +92,14 @@ var _clock_offset_us: int = 0
 var _clock_drift_us: int = 0
 var _clock_synced: bool = false
 
+## Reliable frames each way, counted so a resume replays only what the other side missed.
+var _sent_seq: int = 0
+var _recv_seq: int = 0
+var _sent_history: Array[PackedByteArray] = []
+var _sent_history_bytes: int = 0
+var _resume_elapsed: float = 0.0
+var _retry_elapsed: float = 0.0
+
 
 func _ready() -> void:
 	peer = MelayPeer.new()
@@ -95,6 +113,7 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	_pump()
 	_tick_heartbeat(delta)
+	_tick_resume(delta)
 
 
 ## Opens the relay connection and completes the handshake.
@@ -106,20 +125,13 @@ func connect_to_relay() -> MelayResult:
 	if _status != Status.DISCONNECTED:
 		return MelayResult.ok(null)
 
-	_socket = WebSocketPeer.new()
-	_socket.inbound_buffer_size = INBOUND_BUFFER_SIZE
-	_socket.outbound_buffer_size = OUTBOUND_BUFFER_SIZE
-	_socket.max_queued_packets = MAX_QUEUED_PACKETS
-
-	var endpoint: String = _endpoint_url()
-	var err: Error = _socket.connect_to_url(endpoint)
+	var err: Error = _open_socket()
 	if err != OK:
-		_socket = null
 		return MelayResult.fail(
-			MelayProtocol.CODE_NOT_CONNECTED, "could not reach %s (error %d)" % [endpoint, err]
+			MelayProtocol.CODE_NOT_CONNECTED,
+			"could not reach %s (error %d)" % [_endpoint_url(), err]
 		)
 
-	_hello_sent = false
 	_close_reason = ""
 	_status = Status.CONNECTING
 	peer.set_connecting()
@@ -210,7 +222,16 @@ func disconnect_from_relay(reason: String = "closed by the game") -> void:
 	_close_reason = reason
 	if _socket != null:
 		_socket.close()
+		# Pushes the close frame out now, since the game may be quitting this frame.
+		_socket.poll()
 	_teardown(reason)
+
+
+## Sends a clean close without emitting anything, since the game is shutting down.
+func close_on_exit() -> void:
+	if _socket != null:
+		_socket.close()
+		_socket.poll()
 
 
 func get_status() -> Status:
@@ -286,6 +307,12 @@ func _pump() -> void:
 			while _socket != null and _socket.get_available_packet_count() > 0:
 				_handle_frame(_socket.get_packet())
 		WebSocketPeer.STATE_CLOSED:
+			if _status == Status.RESUMING:
+				_socket = null
+				return
+			if _status == Status.IN_ROOM and _close_reason == "":
+				_begin_resume()
+				return
 			var reason: String = _close_reason
 			if reason == "":
 				reason = _socket.get_close_reason()
@@ -295,7 +322,8 @@ func _pump() -> void:
 
 
 func _tick_heartbeat(delta: float) -> void:
-	if _status == Status.DISCONNECTED or _status == Status.CONNECTING:
+	if _status == Status.DISCONNECTED or _status == Status.CONNECTING \
+	or _status == Status.RESUMING:
 		return
 
 	_ping_elapsed += delta
@@ -304,11 +332,57 @@ func _tick_heartbeat(delta: float) -> void:
 	_ping_elapsed = 0.0
 
 	if _pings_outstanding >= MISSED_PONGS_BEFORE_DROP:
-		disconnect_from_relay("relay stopped responding")
+		if _status == Status.IN_ROOM:
+			_socket.close(CLOSE_RESUMING)
+			_begin_resume()
+		else:
+			disconnect_from_relay("relay stopped responding")
 		return
 
 	_pings_outstanding += 1
 	_send(MelayProtocol.encode_ping(Time.get_ticks_usec()))
+
+
+func _tick_resume(delta: float) -> void:
+	if _status != Status.RESUMING:
+		return
+
+	_resume_elapsed += delta
+	if _resume_elapsed >= RESUME_WINDOW:
+		disconnect_from_relay("could not reconnect to the relay")
+		return
+
+	_retry_elapsed += delta
+	if _retry_elapsed < RESUME_RETRY_INTERVAL:
+		return
+	_retry_elapsed = 0.0
+	if _socket != null and _socket.get_ready_state() == WebSocketPeer.STATE_OPEN:
+		return
+	_open_socket()
+
+
+func _begin_resume() -> void:
+	_status = Status.RESUMING
+	_socket = null
+	_hello_sent = false
+	_outbox.clear()
+	_pings_outstanding = 0
+	_resume_elapsed = 0.0
+	_retry_elapsed = RESUME_RETRY_INTERVAL
+	reconnecting.emit()
+
+
+func _open_socket() -> Error:
+	_socket = WebSocketPeer.new()
+	_socket.inbound_buffer_size = INBOUND_BUFFER_SIZE
+	_socket.outbound_buffer_size = OUTBOUND_BUFFER_SIZE
+	_socket.max_queued_packets = MAX_QUEUED_PACKETS
+	_hello_sent = false
+
+	var err: Error = _socket.connect_to_url(_endpoint_url())
+	if err != OK:
+		_socket = null
+	return err
 
 
 # What one frame may carry, which is the relay's packet limit.
@@ -331,7 +405,7 @@ func _endpoint_url() -> String:
 
 func _send_hello() -> void:
 	_hello_sent = true
-	_send(MelayProtocol.encode_json(MelayProtocol.Op.HELLO, {
+	var hello: Dictionary = {
 		"protocol": MelayProtocol.VERSION,
 		"game": game_id,
 		"game_version": game_version,
@@ -339,7 +413,11 @@ func _send_hello() -> void:
 		"display_name": display_name,
 		"platform": OS.get_name().to_lower(),
 		"auth": api_key,
-	}))
+	}
+	if _status == Status.RESUMING:
+		hello["resume"] = _session_id
+		hello["received"] = _recv_seq
+	_send(MelayProtocol.encode_json(MelayProtocol.Op.HELLO, hello))
 
 
 func _send(frame: PackedByteArray) -> Error:
@@ -363,6 +441,8 @@ func _flush() -> Error:
 
 
 func _handle_frame(frame: PackedByteArray) -> void:
+	if _is_sequenced(frame):
+		_recv_seq += 1
 	match MelayProtocol.peek_op(frame):
 		MelayProtocol.Op.RELAY_OUT:
 			_handle_relay(frame)
@@ -384,6 +464,18 @@ func _handle_frame(frame: PackedByteArray) -> void:
 			_handle_error(MelayProtocol.decode_json(frame))
 		_:
 			pass
+
+
+# Mirrors what the relay numbers: reliable relays, every fragment, and membership changes.
+func _is_sequenced(frame: PackedByteArray) -> bool:
+	match MelayProtocol.peek_op(frame):
+		MelayProtocol.Op.RELAY_OUT:
+			return frame.size() >= MelayProtocol.RELAY_PACKET_OFFSET \
+			and frame.decode_u8(6) == MultiplayerPeer.TRANSFER_MODE_RELIABLE
+		MelayProtocol.Op.RELAY_FRAGMENT_OUT, MelayProtocol.Op.PEER_JOIN, \
+		MelayProtocol.Op.PEER_LEAVE:
+			return true
+	return false
 
 
 func _handle_relay(frame: PackedByteArray) -> void:
@@ -440,6 +532,9 @@ func _handle_fragment(frame: PackedByteArray) -> void:
 
 
 func _handle_welcome(data: Dictionary) -> void:
+	if _status == Status.RESUMING:
+		_handle_resume_welcome(data)
+		return
 	_session_id = data.get("session_id", "")
 	_limits = data.get("limits", {})
 	_max_message_size = int(_limits.get("max_message_size", 0))
@@ -447,6 +542,24 @@ func _handle_welcome(data: Dictionary) -> void:
 	_pings_outstanding = 0
 	connected.emit()
 	_resolve(MelayResult.ok(null))
+
+
+func _handle_resume_welcome(data: Dictionary) -> void:
+	if not bool(data.get("resumed", false)):
+		disconnect_from_relay("the relay could not resume the session")
+		return
+
+	var received: int = int(data.get("received", 0))
+	var first: int = _sent_seq - _sent_history.size() + 1
+	if received + 1 < first or received > _sent_seq:
+		disconnect_from_relay("packets the relay missed are no longer held")
+		return
+
+	_status = Status.IN_ROOM
+	_pings_outstanding = 0
+	for index: int in range(received + 1 - first, _sent_history.size()):
+		_send(_sent_history[index])
+	reconnected.emit()
 
 
 func _handle_room_state(data: Dictionary) -> void:
@@ -551,11 +664,14 @@ func _on_peer_packet_generated(
 	mode: int,
 	payload: PackedByteArray
 ) -> void:
-	if _status != Status.IN_ROOM:
+	if _status != Status.IN_ROOM and _status != Status.RESUMING:
 		return
 	var frame_limit: int = _frame_limit()
 	if payload.size() <= frame_limit:
-		_send(MelayProtocol.encode_relay(target_peer, channel, mode, payload))
+		_send_relay(
+			MelayProtocol.encode_relay(target_peer, channel, mode, payload),
+			mode == MultiplayerPeer.TRANSFER_MODE_RELIABLE
+		)
 		return
 
 	var slice_size: int = frame_limit - MelayProtocol.FRAGMENT_HEADER_SIZE
@@ -564,7 +680,7 @@ func _on_peer_packet_generated(
 	_next_message_id = (_next_message_id + 1) % MESSAGE_ID_LIMIT
 	for index: int in count:
 		var start: int = index * slice_size
-		_send(MelayProtocol.encode_fragment(
+		_send_relay(MelayProtocol.encode_fragment(
 			target_peer,
 			channel,
 			mode,
@@ -573,12 +689,27 @@ func _on_peer_packet_generated(
 			count,
 			payload.size(),
 			payload.slice(start, mini(start + slice_size, payload.size()))
-		))
+		), true)
+
+
+# Unreliable frames are not worth holding through a drop, so they are only ever sent live.
+func _send_relay(frame: PackedByteArray, sequenced: bool) -> void:
+	if sequenced:
+		_sent_seq += 1
+		_sent_history.append(frame)
+		_sent_history_bytes += frame.size()
+		while _sent_history_bytes > RESUME_HISTORY_LIMIT:
+			var dropped: PackedByteArray = _sent_history.pop_front()
+			_sent_history_bytes -= dropped.size()
+	if _status == Status.IN_ROOM:
+		_send(frame)
 
 
 func _on_peer_close_requested() -> void:
 	if _status == Status.IN_ROOM:
 		leave_room()
+	elif _status == Status.RESUMING:
+		disconnect_from_relay("left the room while reconnecting")
 
 
 func _exit_room() -> void:
@@ -605,6 +736,10 @@ func _teardown(reason: String) -> void:
 	_max_message_size = 0
 	_partials.clear()
 	_outbox.clear()
+	_sent_seq = 0
+	_recv_seq = 0
+	_sent_history.clear()
+	_sent_history_bytes = 0
 	_socket = null
 	set_process(false)
 	peer.reset()

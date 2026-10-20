@@ -59,9 +59,9 @@ func _is_server() -> bool:
 	return _self_peer_id == HOST_PEER_ID
 
 
-# The relay routes to any target itself, so Godot must not re-forward via the host.
+# The relay routes to any target itself; true would make Godot bounce client traffic off the host.
 func _is_server_relay_supported() -> bool:
-	return true
+	return false
 
 
 func _get_max_packet_size() -> int:

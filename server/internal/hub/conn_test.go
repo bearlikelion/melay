@@ -10,8 +10,9 @@ import (
 
 func newTestConn() *Conn {
 	return &Conn{
-		log:    slog.New(slog.NewTextHandler(io.Discard, nil)),
-		notify: make(chan struct{}, 1),
+		session: &session{},
+		log:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+		notify:  make(chan struct{}, 1),
 	}
 }
 

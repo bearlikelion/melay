@@ -91,7 +91,6 @@ func newConn(ws *websocket.Conn, h *Hub, log *slog.Logger) *Conn {
 	return c
 }
 
-
 // noteEnd records why the connection ended, reporting whether this call was the one
 // that stuck. Later causes are consequences of the first and are dropped.
 func (c *Conn) noteEnd(cause endCause) bool {
@@ -105,7 +104,6 @@ func (c *Conn) noteEnd(cause endCause) bool {
 	return true
 }
 
-
 // endedBecause reports the recorded cause, falling back to a plain close.
 func (c *Conn) endedBecause() endCause {
 	c.endMu.Lock()
@@ -116,7 +114,6 @@ func (c *Conn) endedBecause() endCause {
 	return c.end
 }
 
-
 // noteRead records one inbound frame and when it landed, so a disconnect log can say
 // whether the client went silent before it dropped.
 func (c *Conn) noteRead(n int) {
@@ -125,12 +122,10 @@ func (c *Conn) noteRead(n int) {
 	c.lastReadNS.Store(time.Now().UnixNano())
 }
 
-
 // silentFor is how long the client has sent nothing.
 func (c *Conn) silentFor() time.Duration {
 	return time.Since(time.Unix(0, c.lastReadNS.Load()))
 }
-
 
 // readEndCause names why a read stopped. A close handshake carries a status code; an
 // abrupt drop carries none, which is what a crashed or network-severed client looks like.
